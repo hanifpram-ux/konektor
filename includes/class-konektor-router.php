@@ -174,7 +174,7 @@ class Konektor_Router {
         $pixel_scripts = Konektor_Meta::get_pixel_script( $campaign, 'form_submit' )
                        . Konektor_Google::get_script( $campaign, 'form_submit' )
                        . Konektor_Tiktok::get_script( $campaign, 'form_submit' )
-                       . Konektor_Snack::get_script( $campaign, 'form_submit' );
+                       . Konektor_Snack::get_script( $campaign );
 
         // If any client-side pixel exists, render intermediate page that fires pixels then redirects
         if ( $pixel_scripts ) {
@@ -368,7 +368,7 @@ class Konektor_Router {
         $pixel_head = Konektor_Meta::get_pixel_script( $campaign, 'page_load' )
                     . Konektor_Google::get_script( $campaign, 'page_load' )
                     . Konektor_Tiktok::get_script( $campaign, 'page_load' )
-                    . Konektor_Snack::get_script( $campaign, 'page_load' );
+                    . Konektor_Snack::get_script( $campaign );
 
         include KONEKTOR_PLUGIN_DIR . 'public/form-page.php';
     }
