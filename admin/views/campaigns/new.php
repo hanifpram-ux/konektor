@@ -69,17 +69,20 @@
       <tbody>
         <?php
         $rows = [
-          ['Catat nama, HP, email, alamat',    true,  false],
-          ['Catat IP address visitor',         true,  true],
-          ['Catat cookie ID visitor',          true,  true],
-          ['Catat user agent browser',         true,  true],
-          ['Catat referrer URL',               true,  true],
-          ['Rotator CS berbobot',              true,  true],
-          ['Deteksi double lead',              true,  false],
-          ['Blokir customer',                  true,  true],
-          ['Pixel Meta / Google / TikTok',     true,  false],
-          ['Thanks page custom',               true,  false],
-          ['Notifikasi Telegram',              true,  true],
+          ['Catat nama, HP, email, alamat',                true,  false],
+          ['Catat IP address visitor',                     true,  true],
+          ['Catat cookie ID visitor',                      true,  true],
+          ['Catat referrer &amp; source URL',              true,  true],
+          ['Rotator CS berbobot + jadwal on-duty',         true,  true],
+          ['Deteksi double lead',                          true,  true],
+          ['Blokir customer (IP, cookie, fingerprint)',    true,  true],
+          ['Pixel Meta / Google / TikTok / Snack Video',  true,  true],
+          ['Meta CAPI (server-side)',                      true,  true],
+          ['Follow-up customer via WA',                    true,  false],
+          ['Thanks page kustom',                           true,  false],
+          ['Notifikasi Telegram + perintah bot',           true,  true],
+          ['Panel CS mandiri (tanpa login WP)',            true,  true],
+          ['Embed ke landing page manapun',                true,  true],
         ];
         foreach ($rows as $i => [$label, $form, $wa]) : ?>
         <tr style="border-bottom:1px solid var(--g100)<?php echo $i === count($rows)-1 ? ';border-bottom:none' : ''; ?>">
