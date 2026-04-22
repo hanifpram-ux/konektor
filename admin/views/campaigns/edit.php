@@ -435,29 +435,11 @@ echo wp_json_encode($op_data);
       </div>
 
       <!-- Snack Video -->
-      <?php $snack_events = ['page','SubmitForm','ClickButton','Search','AddToCart','AddToWishlist','CompletePayment','CompleteRegistration','Contact','Download','Subscribe']; ?>
       <div class="knk-pcontent" data-ptab="snack">
-        <div class="knk-g2">
-          <div class="knk-field knk-col-full">
-            <label class="knk-label">Snack Video Pixel ID</label>
-            <textarea name="pixel_config[snack][pixel_id]" class="knk-input knk-mono" rows="3"
-              placeholder="285303846528300"><?php echo esc_textarea($snack_cfg['pixel_id']??''); ?></textarea>
-            <p class="knk-hint">Isi dengan Pixel ID dari akun Snack Video (Kwai for Business) Anda.</p>
-          </div>
-          <div class="knk-field">
-            <label class="knk-label">Event Page Load</label>
-            <?php echo knk_evt_select('pixel_config[snack][page_load_event]', $snack_cfg['page_load_event']??'page', $snack_events); ?>
-          </div>
-          <div class="knk-field">
-            <label class="knk-label"><?php echo $is_wa ? 'Event WA Click' : 'Event Form Submit'; ?></label>
-            <?php echo knk_evt_select('pixel_config[snack][form_submit_event]', $snack_cfg['form_submit_event']??($is_wa?'ClickButton':'SubmitForm'), $snack_events); ?>
-          </div>
-          <?php if (!$is_wa) : ?>
-          <div class="knk-field">
-            <label class="knk-label">Event Thanks Page</label>
-            <?php echo knk_evt_select('pixel_config[snack][thanks_page_event]', $snack_cfg['thanks_page_event']??'CompletePayment', $snack_events); ?>
-          </div>
-          <?php endif; ?>
+        <div class="knk-field">
+          <label class="knk-label">Kode Pixel Snack Video</label>
+          <textarea name="pixel_config[snack][html]" class="knk-input knk-mono" rows="8"
+            placeholder="Paste kode pixel dari akun Snack Video (Kwai for Business) di sini..."><?php echo esc_textarea($snack_cfg['html']??''); ?></textarea>
         </div>
       </div>
 
