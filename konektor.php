@@ -94,3 +94,4 @@ function konektor_init() {
     }
 }
 add_action( 'plugins_loaded', 'konektor_init' );
+ 
