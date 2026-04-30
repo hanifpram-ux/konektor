@@ -159,6 +159,9 @@ class Konektor_Install {
             dbDelta( $query );
         }
 
+        // API Log table
+        Konektor_Logger::create_table();
+
         // Add columns that may be missing from older installs
         self::maybe_add_columns();
     }
@@ -213,6 +216,7 @@ class Konektor_Install {
             'cs_panel_slug'          => 'cs-panel',
             'encrypt_lead_data'      => '1',
             'base_slug'              => 'konektor',
+            'debug_log'              => '0',
         ];
         foreach ( $defaults as $key => $val ) {
             $exists = $wpdb->get_var( $wpdb->prepare( "SELECT setting_key FROM $table WHERE setting_key = %s", $key ) );

@@ -20,21 +20,34 @@ class Konektor_Router {
 
     public static function register_rewrite_rules() {
         $base = Konektor_Helper::get_setting( 'base_slug', 'konektor' );
+        $b    = preg_quote( $base, '/' );
 
-        // CS Panel: /{base}/cs-panel (must be before generic slug rule)
-        add_rewrite_rule( '^' . preg_quote( $base, '/' ) . '/cs-panel/?$', 'index.php?konektor_action=cs_panel', 'top' );
+        // CS Panel
+        add_rewrite_rule( "^{$b}/cs-panel/?$", 'index.php?konektor_action=cs_panel', 'top' );
 
-        // Assets: /{base}/assets/{file}
-        add_rewrite_rule( '^' . preg_quote( $base, '/' ) . '/assets/([^/]+)/?$', 'index.php?konektor_asset=$matches[1]', 'top' );
+        // Assets
+        add_rewrite_rule( "^{$b}/assets/([^/]+)/?$", 'index.php?konektor_asset=$matches[1]', 'top' );
+
+        // Thanks page (normal): /{base}/{slug}/thanks/
+        add_rewrite_rule( "^{$b}/([^/]+)/thanks/?$", 'index.php?konektor_slug=$matches[1]&konektor_action=thanks', 'top' );
+
+        // Thanks page (double): /{base}/{slug}/thanks-double/
+        add_rewrite_rule( "^{$b}/([^/]+)/thanks-double/?$", 'index.php?konektor_slug=$matches[1]&konektor_action=thanks_double', 'top' );
+
+        // Check endpoint: /{base}/{slug}/check/
+        add_rewrite_rule( "^{$b}/([^/]+)/check/?$", 'index.php?konektor_slug=$matches[1]&konektor_action=check', 'top' );
 
         // Form submit: POST /{base}/{slug}/submit
-        add_rewrite_rule( '^' . preg_quote( $base, '/' ) . '/([^/]+)/submit/?$', 'index.php?konektor_slug=$matches[1]&konektor_action=submit', 'top' );
+        add_rewrite_rule( "^{$b}/([^/]+)/submit/?$", 'index.php?konektor_slug=$matches[1]&konektor_action=submit', 'top' );
 
-        // Form config (for embed JS): GET /{base}/{slug}/config
-        add_rewrite_rule( '^' . preg_quote( $base, '/' ) . '/([^/]+)/config/?$', 'index.php?konektor_slug=$matches[1]&konektor_action=config', 'top' );
+        // Pixel endpoint: GET /{base}/{slug}/pixel/ — server-side page_load event
+        add_rewrite_rule( "^{$b}/([^/]+)/pixel/?$", 'index.php?konektor_slug=$matches[1]&konektor_action=pixel', 'top' );
+
+        // Form config: GET /{base}/{slug}/config
+        add_rewrite_rule( "^{$b}/([^/]+)/config/?$", 'index.php?konektor_slug=$matches[1]&konektor_action=config', 'top' );
 
         // Campaign page: GET /{base}/{slug}
-        add_rewrite_rule( '^' . preg_quote( $base, '/' ) . '/([^/]+)/?$', 'index.php?konektor_slug=$matches[1]&konektor_action=view', 'top' );
+        add_rewrite_rule( "^{$b}/([^/]+)/?$", 'index.php?konektor_slug=$matches[1]&konektor_action=view', 'top' );
     }
 
     public static function add_query_vars( $vars ) {
@@ -75,13 +88,52 @@ class Konektor_Router {
             exit;
         }
 
+        if ( $action === 'pixel' ) {
+            self::handle_pixel_event( $campaign );
+            exit;
+        }
+
         if ( $action === 'config' ) {
             self::serve_config( $campaign );
             exit;
         }
 
-        // Default: view
-        if ( $campaign->type === 'wa_link' ) {
+        // Thanks page normal: /{base}/{slug}/thanks/?t=TOKEN
+        if ( $action === 'thanks' ) {
+            $token   = sanitize_text_field( $_GET['t'] ?? '' );
+            $tp_data = $token ? get_transient( 'knk_tp_' . $token ) : null;
+            if ( $tp_data && (int) $tp_data['campaign_id'] === $campaign->id ) {
+                delete_transient( 'knk_tp_' . $token );
+                // fire_pixels=true hanya untuk link/WA — form sudah kirim di handle_submit
+                $fire = ( $tp_data['source'] ?? 'form' ) === 'link';
+                self::render_thanks_page( $campaign, $tp_data['redirect_url'], $fire );
+            } else {
+                self::render_thanks_page( $campaign, '', false );
+            }
+            exit;
+        }
+
+        // Thanks page double: /{base}/{slug}/thanks-double/?t=TOKEN
+        if ( $action === 'thanks_double' ) {
+            $token   = sanitize_text_field( $_GET['t'] ?? '' );
+            $tp_data = $token ? get_transient( 'knk_tp_' . $token ) : null;
+            if ( $tp_data && (int) $tp_data['campaign_id'] === $campaign->id ) {
+                delete_transient( 'knk_tp_' . $token );
+                self::render_thanks_double_page( $campaign, $tp_data['redirect_url'] );
+            } else {
+                self::render_thanks_double_page( $campaign, '' );
+            }
+            exit;
+        }
+
+        // Check: /{base}/{slug}/check/?_vid=VID — cek double lalu redirect ke thanks atau thanks-double
+        if ( $action === 'check' ) {
+            self::handle_check( $campaign );
+            exit;
+        }
+
+        // Default: view — proses lead lalu redirect ke thanks page
+        if ( $campaign->type === 'wa_link' || $campaign->type === 'link' ) {
             self::handle_wa_redirect( $campaign );
             exit;
         }
@@ -94,36 +146,30 @@ class Konektor_Router {
     // ─── WA Link Redirect ───────────────────────────────────────────
 
     private static function handle_wa_redirect( $campaign ) {
-        // Domain check
         if ( ! Konektor_Helper::is_domain_allowed( $campaign ) ) {
             wp_die( 'Domain tidak diizinkan.', 403 );
         }
-
-        // Block check
-        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked( $campaign->id ) ) {
-            $msg = $campaign->block_message ?: 'Akses Anda telah diblokir.';
-            wp_die( esc_html( $msg ), 'Akses Diblokir', [ 'response' => 403 ] );
+        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked() ) {
+            self::render_blocked_page( $campaign );
+            exit;
         }
 
-        Konektor_Analytics::log_event( $campaign->id, 'wa_click' );
-
-        // Resolve or create visitor cookie (server-side for direct WA link visits)
+        // _vid dari embed JS (landing page domain) diutamakan — lebih akurat dari server cookie
         $vid_from_qs = sanitize_text_field( $_GET['_vid'] ?? '' );
-        $vid         = Konektor_Helper::get_or_create_cookie_id();
-        if ( ! $vid && $vid_from_qs ) $vid = $vid_from_qs;
+        $vid         = $vid_from_qs ?: Konektor_Helper::get_or_create_cookie_id();
 
-        // Double lead check (cookie + IP — no phone/email for WA clicks)
-        $is_double = false;
-        if ( $campaign->double_lead_enabled ) {
-            $is_double = Konektor_Lead::check_double_wa( $campaign->id, $vid );
-        }
+        // Cek duplicate via transient server-side (per VID + campaign)
+        $is_double = $campaign->double_lead_enabled && self::has_done( $campaign->id, $vid );
 
         $operator = Konektor_Rotator::pick( $campaign->id );
+        if ( ! $operator ) {
+            wp_die( 'Tidak ada CS yang tersedia saat ini.' );
+        }
 
-        // Record WA click as a lead BEFORE operator check so click is always tracked
+        // Selalu catat lead; duplicate ditandai is_double=1
         $lead_data = [
             'campaign_id' => $campaign->id,
-            'operator_id' => $operator ? $operator->id : null,
+            'operator_id' => $operator->id,
             'name'        => '',
             'email'       => '',
             'phone'       => '',
@@ -133,87 +179,296 @@ class Konektor_Router {
             '_vid'        => $vid,
         ];
         $lead_id = Konektor_Lead::create( $lead_data );
-
-        if ( ! $operator ) {
-            wp_die( 'Tidak ada CS yang tersedia saat ini. Silahkan coba beberapa saat lagi.' );
-        }
-
-
         if ( $is_double && $lead_id ) {
             Konektor_Lead::mark_double( $lead_id );
         }
 
-        // Only fire analytics + pixel for non-double clicks
         if ( ! $is_double ) {
+            self::mark_done( $campaign->id, $vid );
             Konektor_Analytics::log_event( $campaign->id, 'wa_click', $lead_id );
 
+            // Meta CAPI
             $meta_cfg = Konektor_Meta::get_config( $campaign );
             if ( ! empty( $meta_cfg['token'] ) ) {
                 Konektor_Meta::send_capi_event( $meta_cfg['form_submit_event'] ?? 'Lead', $lead_data, $meta_cfg );
             }
+
+            // TikTok Events API
+            $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
+            if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
+                Konektor_Tiktok::send_event( 'form_submit', $lead_data, $tiktok_cfg );
+            }
+
+            // Snack/Kwai Event API
+            $snack_cfg = Konektor_Snack::get_config( $campaign );
+            if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
+                Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'form_submit' ), $lead_data, $snack_cfg );
+            }
         }
 
-        // Telegram notify — only if lead saved and operator has chat_id
         if ( $lead_id && $operator->telegram_chat_id ) {
             $lead_obj = Konektor_Lead::get( $lead_id );
-            if ( $lead_obj ) {
-                Konektor_Telegram::notify_lead( $lead_obj, $operator, $campaign );
-            }
+            if ( $lead_obj ) Konektor_Telegram::notify_lead( $lead_obj, $operator, $campaign );
         }
 
         $url = Konektor_Rotator::get_redirect_url(
             $operator, $campaign,
             [ 'product_name' => $campaign->product_name, 'operator_name' => $operator->name ]
         );
+        if ( ! $url ) wp_die( 'Tidak dapat mengarahkan ke CS.' );
 
-        if ( ! $url ) {
-            wp_die( 'Tidak dapat mengarahkan ke CS.' );
-        }
-
-        // Build client-side pixel scripts (TikTok, Meta pixel, Google) for wa_click
-        $pixel_scripts = Konektor_Meta::get_pixel_script( $campaign, 'form_submit' )
-                       . Konektor_Google::get_script( $campaign, 'form_submit' )
-                       . Konektor_Tiktok::get_script( $campaign, 'form_submit' )
-                       . Konektor_Snack::get_script( $campaign );
-
-        // If any client-side pixel exists, render intermediate page that fires pixels then redirects
-        if ( $pixel_scripts ) {
-            self::render_wa_redirect_page( $url, $pixel_scripts, $campaign );
-        } else {
-            wp_redirect( $url, 302 );
-        }
+        self::redirect_to_thanks( $campaign, $url, $is_double, 'link' );
     }
 
-    private static function render_wa_redirect_page( $url, $pixel_scripts, $campaign ) {
-        $safe_url   = esc_url( $url );
-        $safe_title = esc_html( $campaign->product_name ?: $campaign->name );
+    // ─── Duplicate state via server transient (per VID + campaign) ──
+
+    private static function has_done( $campaign_id, $vid ) {
+        if ( ! $vid ) return false;
+        return (bool) get_transient( 'knk_done_' . (int) $campaign_id . '_' . md5( $vid ) );
+    }
+
+    private static function mark_done( $campaign_id, $vid ) {
+        if ( ! $vid ) return;
+        set_transient( 'knk_done_' . (int) $campaign_id . '_' . md5( $vid ), 1, YEAR_IN_SECONDS );
+    }
+
+    // ─── Helpers ────────────────────────────────────────────────────
+
+    private static function make_token( $campaign, $redirect_url, $source = 'form' ) {
+        $token = wp_generate_password( 24, false );
+        set_transient( 'knk_tp_' . $token, [
+            'campaign_id'  => $campaign->id,
+            'redirect_url' => $redirect_url,
+            'source'       => $source, // 'form' atau 'link'
+        ], 300 );
+        return $token;
+    }
+
+    private static function make_thanks_url( $campaign, $redirect_url, $source = 'form' ) {
+        $base  = Konektor_Helper::get_setting( 'base_slug', 'konektor' );
+        $token = self::make_token( $campaign, $redirect_url, $source );
+        return home_url( "/{$base}/{$campaign->slug}/thanks/?t={$token}" );
+    }
+
+    private static function make_thanks_double_url( $campaign, $redirect_url, $source = 'form' ) {
+        $base  = Konektor_Helper::get_setting( 'base_slug', 'konektor' );
+        $token = self::make_token( $campaign, $redirect_url, $source );
+        return home_url( "/{$base}/{$campaign->slug}/thanks-double/?t={$token}" );
+    }
+
+    private static function redirect_to_thanks( $campaign, $redirect_url, $is_double, $source = 'form' ) {
+        $url = $is_double
+            ? self::make_thanks_double_url( $campaign, $redirect_url, $source )
+            : self::make_thanks_url( $campaign, $redirect_url, $source );
+        wp_redirect( $url, 302 );
+        exit;
+    }
+
+    // ─── Check endpoint ──────────────────────────────────────────────
+
+    private static function handle_check( $campaign ) {
+        // Tidak ada lead dicatat di sini — hanya redirect berdasarkan state
+        $vid = sanitize_text_field( $_GET['_vid'] ?? '' );
+        if ( ! $vid ) $vid = Konektor_Helper::get_or_create_cookie_id();
+
+        $is_double = $campaign->double_lead_enabled && self::has_done( $campaign->id, $vid );
+
+        $operator     = Konektor_Rotator::pick( $campaign->id );
+        $redirect_url = '';
+        if ( $operator ) {
+            $thanks_cfg = Konektor_Campaign::get_thanks_config( $campaign );
+            if ( ( $thanks_cfg['redirect_type'] ?? 'cs' ) === 'cs' ) {
+                $redirect_url = Konektor_Rotator::get_redirect_url( $operator, $campaign,
+                    [ 'product_name' => $campaign->product_name, 'operator_name' => $operator->name ]
+                );
+            } elseif ( ( $thanks_cfg['redirect_type'] ?? '' ) === 'url' ) {
+                $redirect_url = esc_url( $thanks_cfg['redirect_url'] ?? '' );
+            }
+        }
+
+        if ( $is_double ) {
+            wp_redirect( self::make_thanks_double_url( $campaign, $redirect_url ), 302 );
+        } else {
+            wp_redirect( self::make_thanks_url( $campaign, $redirect_url ), 302 );
+        }
+        exit;
+    }
+
+    // ─── Pixel endpoint: server-side page_load event ────────────────
+
+    private static function handle_pixel_event( $campaign ) {
+        // Allow cross-origin — embed di domain lain
+        header( 'Access-Control-Allow-Origin: *' );
+        header( 'Content-Type: application/json; charset=utf-8' );
+        header( 'Cache-Control: no-store' );
+
+        if ( $_SERVER['REQUEST_METHOD'] === 'OPTIONS' ) {
+            http_response_code( 204 ); exit;
+        }
+
+        $source_url = esc_url_raw( sanitize_text_field( $_GET['url'] ?? ( $_SERVER['HTTP_REFERER'] ?? home_url() ) ) );
+        $lead_data  = [
+            'source_url' => $source_url,
+            'referrer'   => esc_url_raw( $_SERVER['HTTP_REFERER'] ?? '' ),
+        ];
+
+        // Meta CAPI — page_load (PageView)
+        $meta_cfg = Konektor_Meta::get_config( $campaign );
+        if ( ! empty( $meta_cfg['token'] ) ) {
+            $event_name = $meta_cfg['page_load_event'] ?? 'PageView';
+            Konektor_Meta::send_capi_event( $event_name, $lead_data, $meta_cfg );
+        }
+
+        // TikTok Events API — page_load
+        $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
+        if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
+            Konektor_Tiktok::send_event( 'page_load', $lead_data, $tiktok_cfg );
+        }
+
+        // Snack/Kwai Event API — page_load
+        $snack_cfg = Konektor_Snack::get_config( $campaign );
+        if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
+            Konektor_Snack::send_event(
+                Konektor_Snack::get_event_name( $snack_cfg, 'page_load' ),
+                $lead_data,
+                $snack_cfg
+            );
+        }
+
+        echo wp_json_encode( [ 'ok' => true ] );
+        exit;
+    }
+
+    // ─── Thanks Page (normal — first time) ──────────────────────────
+
+    private static function render_thanks_page( $campaign, $redirect_url, $fire_pixels = false ) {
+        $thanks_cfg   = Konektor_Campaign::get_thanks_config( $campaign );
+        $redirect_type = $thanks_cfg['redirect_type'] ?? 'cs';
+        $delay         = max( 1, (int) ( $thanks_cfg['delay_redirect'] ?? 3 ) );
+
+        // Rebuild redirect_url jika kosong
+        if ( ! $redirect_url ) {
+            if ( $redirect_type === 'cs' ) {
+                $op = Konektor_Rotator::pick( $campaign->id );
+                if ( $op ) {
+                    $redirect_url = Konektor_Rotator::get_redirect_url( $op, $campaign,
+                        [ 'operator_name' => $op->name, 'product_name' => $campaign->product_name ]
+                    );
+                }
+            } elseif ( $redirect_type === 'url' ) {
+                $redirect_url = esc_url( $thanks_cfg['redirect_url'] ?? '' );
+            }
+        }
+        if ( $redirect_type === 'none' ) $redirect_url = '';
+
+        // Tembak thanks_page API — hanya untuk link/WA (form sudah kirim di handle_submit)
+        if ( $fire_pixels ) {
+            $lead_data_tp = [ 'source_url' => home_url(), 'referrer' => esc_url_raw( $_SERVER['HTTP_REFERER'] ?? '' ) ];
+
+            $meta_cfg = Konektor_Meta::get_config( $campaign );
+            if ( ! empty( $meta_cfg['token'] ) ) {
+                Konektor_Meta::send_capi_event( $meta_cfg['thanks_page_event'] ?? 'Purchase', $lead_data_tp, $meta_cfg );
+            }
+
+            $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
+            if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
+                Konektor_Tiktok::send_event( 'thanks_page', $lead_data_tp, $tiktok_cfg );
+            }
+
+            $snack_cfg = Konektor_Snack::get_config( $campaign );
+            if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
+                Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'thanks_page' ), $lead_data_tp, $snack_cfg );
+            }
+        }
+
+        // Thanks page: Meta, TikTok, Snack sudah di-fire via API di handle_submit/handle_wa_redirect.
+        // Hanya Google yang tetap browser-side karena butuh gclid dari browser untuk conversion tracking.
+        $pixel_head = Konektor_Google::get_script( $campaign, 'thanks_page' );
+
+        [ $btn_icon, $btn_label ] = self::resolve_btn( $redirect_url, $thanks_cfg['btn_label'] ?? '' );
+
+        $title      = $thanks_cfg['description'] ?? 'Terima kasih!';
+        $message    = $thanks_cfg['sub_message']  ?? '';
+        $accent     = '#16a34a';
+        $icon_bg    = '#dcfce7';
+        $is_double  = false;
+
         status_header( 200 );
         nocache_headers();
-        echo '<!DOCTYPE html><html><head><meta charset="utf-8">';
-        echo '<title>' . $safe_title . '</title>';
-        echo '<meta http-equiv="refresh" content="1;url=' . $safe_url . '">';
-        echo $pixel_scripts;
-        echo '</head><body>';
-        echo '<script>setTimeout(function(){window.location.href=' . wp_json_encode( $url ) . ';},800);</script>';
-        echo '</body></html>';
+        include KONEKTOR_PLUGIN_DIR . 'public/thanks-page.php';
     }
 
-    // ─── Form Submit (JSON POST) ─────────────────────────────────────
+    // ─── Thanks Page Double (duplicate lead) ─────────────────────────
+
+    private static function render_thanks_double_page( $campaign, $redirect_url ) {
+        $thanks_cfg   = Konektor_Campaign::get_thanks_config( $campaign );
+        $redirect_type = $thanks_cfg['redirect_type'] ?? 'cs';
+        $delay         = max( 1, (int) ( $thanks_cfg['delay_redirect'] ?? 3 ) );
+
+        // Untuk double: selalu redirect ke CS agar user bisa hubungi ulang
+        if ( ! $redirect_url ) {
+            $op = Konektor_Rotator::pick( $campaign->id );
+            if ( $op ) {
+                $redirect_url = Konektor_Rotator::get_redirect_url( $op, $campaign,
+                    [ 'operator_name' => $op->name, 'product_name' => $campaign->product_name ]
+                );
+            }
+        }
+        if ( $redirect_type === 'none' ) $redirect_url = '';
+
+        // Pixel — double: tidak ada pixel sama sekali
+        $pixel_head = '';
+
+        [ $btn_icon, ] = self::resolve_btn( $redirect_url, '' );
+        $btn_label = 'Hubungi CS Kami';
+
+        $double_message = $campaign->double_lead_message
+            ?: 'Anda pernah mengisi form sebelumnya, silahkan dapat menghubungi CS kembali';
+
+        $title   = 'Anda Sudah Terdaftar';
+        $message = '';
+        $accent  = '#d97706';
+        $icon_bg = '#fef9c3';
+
+        status_header( 200 );
+        nocache_headers();
+        include KONEKTOR_PLUGIN_DIR . 'public/thanks-page-double.php';
+    }
+
+    private static function resolve_btn( $redirect_url, $override_label ) {
+        if ( strpos( $redirect_url, 'wa.me' ) !== false || strpos( $redirect_url, 'whatsapp' ) !== false ) {
+            $icon = 'wa'; $label = 'Hubungi via WhatsApp';
+        } elseif ( strpos( $redirect_url, 't.me' ) !== false || strpos( $redirect_url, 'telegram' ) !== false ) {
+            $icon = 'tg'; $label = 'Hubungi via Telegram';
+        } elseif ( strpos( $redirect_url, 'mailto:' ) !== false ) {
+            $icon = 'mail'; $label = 'Kirim Email';
+        } elseif ( strpos( $redirect_url, 'line.me' ) !== false ) {
+            $icon = 'line'; $label = 'Hubungi via LINE';
+        } else {
+            $icon = ''; $label = 'Lanjutkan';
+        }
+        if ( $override_label ) $label = $override_label;
+        return [ $icon, $label ];
+    }
+
+    // ─── Blocked Page ────────────────────────────────────────────────
+
+    private static function render_blocked_page( $campaign ) {
+        $message = $campaign->block_message ?: 'Akses Anda telah diblokir oleh administrator.';
+        status_header( 403 );
+        nocache_headers();
+        include KONEKTOR_PLUGIN_DIR . 'public/blocked-page.php';
+    }
+
+    // ─── Form Submit ─────────────────────────────────────────────────
 
     private static function handle_submit( $campaign ) {
-        $is_html_embed = ! empty( $_POST['_html_embed'] );
-
-        if ( ! $is_html_embed ) {
-            header( 'Content-Type: application/json; charset=utf-8' );
-        }
-
-        // Allow cross-origin for embed (landing page lain)
+        // CORS untuk embed fetch (cross-origin)
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
         if ( $origin ) {
-            // Validate allowed domains
             $allowed = json_decode( $campaign->allowed_domains ?? '[]', true );
             $host    = parse_url( $origin, PHP_URL_HOST );
-            $ok      = empty( $allowed ); // empty = semua boleh
+            $ok      = empty( $allowed );
             if ( ! $ok ) {
                 foreach ( $allowed as $d ) {
                     if ( $host === $d || str_ends_with( $host, '.' . $d ) ) { $ok = true; break; }
@@ -227,52 +482,51 @@ class Konektor_Router {
             }
         }
 
-        // Handle preflight
         if ( $_SERVER['REQUEST_METHOD'] === 'OPTIONS' ) {
             http_response_code( 204 );
             exit;
         }
 
         if ( $_SERVER['REQUEST_METHOD'] !== 'POST' ) {
-            http_response_code( 405 );
-            echo wp_json_encode( [ 'success' => false, 'message' => 'Method not allowed.' ] );
-            exit;
+            wp_die( 'Method not allowed.', 405 );
+        }
+
+        // Embed form kirim JSON; standalone form POST biasa
+        $ct       = $_SERVER['CONTENT_TYPE'] ?? '';
+        $is_embed = str_contains( $ct, 'application/json' );
+
+        if ( $is_embed ) {
+            header( 'Content-Type: application/json; charset=utf-8' );
         }
 
         if ( $campaign->status !== 'active' ) {
-            http_response_code( 400 );
-            echo wp_json_encode( [ 'success' => false, 'message' => 'Kampanye tidak aktif.' ] );
+            if ( $is_embed ) {
+                echo wp_json_encode( [ 'success' => false, 'message' => 'Kampanye tidak aktif.' ] );
+            } else {
+                wp_die( 'Kampanye tidak aktif.' );
+            }
             exit;
         }
 
-        // Block check
-        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked( $campaign->id ) ) {
-            http_response_code( 403 );
-            echo wp_json_encode( [ 'success' => false, 'blocked' => true, 'message' => $campaign->block_message ?: 'Akses Anda telah diblokir.' ] );
+        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked() ) {
+            if ( $is_embed ) {
+                echo wp_json_encode( [ 'success' => false, 'blocked' => true, 'message' => $campaign->block_message ?: 'Akses Anda telah diblokir.' ] );
+            } else {
+                self::render_blocked_page( $campaign );
+            }
             exit;
         }
 
-        // Parse body: support JSON and form-data
         $input = self::parse_input();
 
         $phone = Konektor_Helper::sanitize_phone( $input['phone'] ?? '' );
         $email = sanitize_email( $input['email'] ?? '' );
+        // _vid dari embed JS diutamakan, fallback ke server cookie
+        $vid   = sanitize_text_field( $input['_vid'] ?? $_COOKIE['konektor_vid'] ?? '' );
 
-        // Cookie VID: prefer $_COOKIE, fallback to _vid from JSON body (cross-domain embed)
-        $vid_from_body = sanitize_text_field( $input['_vid'] ?? '' );
+        // Cek duplicate via transient server-side (per VID + campaign)
+        $is_double = $campaign->double_lead_enabled && self::has_done( $campaign->id, $vid );
 
-        // Double lead check
-        if ( $campaign->double_lead_enabled && Konektor_Lead::check_double( $campaign->id, $phone, $email, $vid_from_body ) ) {
-            echo wp_json_encode( [
-                'success'     => false,
-                'double'      => true,
-                'redirect_cs' => true,
-                'message'     => $campaign->double_lead_message ?: 'Anda pernah mendaftar. Silahkan hubungi CS kami.',
-            ] );
-            exit;
-        }
-
-        // Pick operator
         $operator = Konektor_Rotator::pick( $campaign->id );
 
         $lead_data = [
@@ -286,26 +540,68 @@ class Konektor_Router {
             'custom_message' => sanitize_textarea_field( $input['custom_message'] ?? '' ),
             'product_name'   => $campaign->product_name,
             'source_url'     => esc_url_raw( $input['source_url'] ?? ( $_SERVER['HTTP_REFERER'] ?? '' ) ),
-            '_vid'           => $vid_from_body,
+            '_vid'           => $vid,
         ];
 
-        // Extra fields
-        $std_keys = [ 'name','email','phone','address','quantity','custom_message','source_url' ];
+        $std_keys = [ 'name','email','phone','address','quantity','custom_message','source_url','_vid' ];
         $extra    = array_diff_key( $input, array_flip( $std_keys ) );
         if ( $extra ) $lead_data['extra_data'] = $extra;
 
         $lead_id = Konektor_Lead::create( $lead_data );
-
-        Konektor_Analytics::log_event( $campaign->id, 'form_submit', $lead_id );
-
-        // Meta CAPI
-        $meta_cfg = Konektor_Meta::get_config( $campaign );
-        if ( ! empty( $meta_cfg['token'] ) ) {
-            Konektor_Meta::send_capi_event( $meta_cfg['form_submit_event'] ?? 'Lead', $lead_data, $meta_cfg );
-            Konektor_Meta::send_capi_event( $meta_cfg['thanks_page_event'] ?? 'Purchase', $lead_data, $meta_cfg );
+        if ( $is_double && $lead_id ) {
+            Konektor_Lead::mark_double( $lead_id );
         }
 
-        // Telegram notify
+        if ( ! $is_double ) {
+            self::mark_done( $campaign->id, $vid );
+            Konektor_Analytics::log_event( $campaign->id, 'form_submit', $lead_id );
+
+            // Meta CAPI — form_submit + thanks_page
+            $meta_cfg = Konektor_Meta::get_config( $campaign );
+
+            // Debug log: rekam state saat submit
+            global $wpdb;
+            $wpdb->insert( $wpdb->prefix . 'konektor_api_logs', [
+                'platform'    => 'DEBUG submit',
+                'event_name'  => 'submit_trace',
+                'endpoint'    => 'internal',
+                'payload'     => wp_json_encode( [
+                    'token_set'         => ! empty( $meta_cfg['token'] ),
+                    'pixel_id'          => $meta_cfg['pixel_id'] ?? '(kosong)',
+                    'form_submit_event' => $meta_cfg['form_submit_event'] ?? '(kosong)',
+                    'thanks_page_event' => $meta_cfg['thanks_page_event'] ?? '(kosong)',
+                    'test_event_code'   => $meta_cfg['test_event_code'] ?? '(kosong)',
+                    'is_double'         => $is_double,
+                    'vid'               => $vid,
+                    'phone'             => $phone,
+                    'name'              => $lead_data['name'],
+                ] ),
+                'response'    => 'debug only',
+                'status_code' => 0,
+                'success'     => 1,
+                'created_at'  => current_time( 'mysql' ),
+            ] );
+
+            if ( ! empty( $meta_cfg['token'] ) ) {
+                Konektor_Meta::send_capi_event( $meta_cfg['form_submit_event'] ?? 'Lead', $lead_data, $meta_cfg );
+                Konektor_Meta::send_capi_event( $meta_cfg['thanks_page_event'] ?? 'Purchase', $lead_data, $meta_cfg );
+            }
+
+            // TikTok Events API — form_submit + thanks_page
+            $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
+            if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
+                Konektor_Tiktok::send_event( 'form_submit', $lead_data, $tiktok_cfg );
+                Konektor_Tiktok::send_event( 'thanks_page', $lead_data, $tiktok_cfg );
+            }
+
+            // Snack/Kwai Event API — form_submit + thanks_page
+            $snack_cfg = Konektor_Snack::get_config( $campaign );
+            if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
+                Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'form_submit' ), $lead_data, $snack_cfg );
+                Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'thanks_page' ), $lead_data, $snack_cfg );
+            }
+        }
+
         if ( $operator && $operator->telegram_chat_id && $lead_id ) {
             $lead_obj = Konektor_Lead::get( $lead_id );
             if ( $lead_obj ) {
@@ -313,7 +609,6 @@ class Konektor_Router {
             }
         }
 
-        // Build redirect URL
         $thanks_cfg   = Konektor_Campaign::get_thanks_config( $campaign );
         $redirect_url = '';
 
@@ -326,23 +621,15 @@ class Konektor_Router {
             $redirect_url = esc_url( $thanks_cfg['redirect_url'] );
         }
 
-        if ( $is_html_embed ) {
-            if ( $redirect_url ) {
-                wp_redirect( $redirect_url, 302 );
-            } else {
-                $base = Konektor_Helper::get_setting( 'base_slug', 'konektor' );
-                wp_redirect( home_url( "/{$base}/{$campaign->slug}" ) );
-            }
-            exit;
-        }
+        $tp_url = $is_double
+            ? self::make_thanks_double_url( $campaign, $redirect_url )
+            : self::make_thanks_url( $campaign, $redirect_url );
 
-        echo wp_json_encode( [
-            'success'      => true,
-            'message'      => $thanks_cfg['description'] ?? 'Terima kasih!',
-            'redirect_url' => $redirect_url,
-            'redirect_type'=> $thanks_cfg['redirect_type'] ?? 'none',
-            'delay'        => (int) ( $thanks_cfg['delay_redirect'] ?? 3 ),
-        ] );
+        if ( $is_embed ) {
+            echo wp_json_encode( [ 'success' => true, 'double' => $is_double, 'thanks_page_url' => $tp_url ] );
+        } else {
+            wp_redirect( $tp_url, 302 );
+        }
         exit;
     }
 
@@ -350,9 +637,9 @@ class Konektor_Router {
 
     private static function render_form_page( $campaign ) {
         // Block check
-        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked( $campaign->id ) ) {
-            $msg = $campaign->block_message ?: 'Akses Anda telah diblokir.';
-            wp_die( esc_html( $msg ), 'Diblokir', [ 'response' => 403 ] );
+        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked() ) {
+            self::render_blocked_page( $campaign );
+            exit;
         }
 
         if ( ! Konektor_Helper::is_domain_allowed( $campaign ) ) {
@@ -360,6 +647,28 @@ class Konektor_Router {
         }
 
         Konektor_Analytics::log_event( $campaign->id, 'form_view' );
+
+        // CAPI server-side page_load — fire di sini agar tercatat di panel platform
+        $page_lead_data = [
+            'source_url' => home_url( '/' . Konektor_Helper::get_setting( 'base_slug', 'konektor' ) . '/' . $campaign->slug . '/' ),
+            'referrer'   => esc_url_raw( $_SERVER['HTTP_REFERER'] ?? '' ),
+        ];
+
+        $meta_cfg = Konektor_Meta::get_config( $campaign );
+        if ( ! empty( $meta_cfg['token'] ) ) {
+            $event_name = $meta_cfg['page_load_event'] ?? 'PageView';
+            Konektor_Meta::send_capi_event( $event_name, $page_lead_data, $meta_cfg );
+        }
+
+        $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
+        if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
+            Konektor_Tiktok::send_event( 'page_load', $page_lead_data, $tiktok_cfg );
+        }
+
+        $snack_cfg = Konektor_Snack::get_config( $campaign );
+        if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
+            Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'page_load' ), $page_lead_data, $snack_cfg );
+        }
 
         $submit_url = Konektor_Campaign::get_submit_url( $campaign );
         $config     = Konektor_Campaign::get_form_config( $campaign );
@@ -379,10 +688,9 @@ class Konektor_Router {
         header( 'Content-Type: application/json; charset=utf-8' );
         header( 'Access-Control-Allow-Origin: *' );
 
-        $cfg     = Konektor_Campaign::get_form_config( $campaign );
-        $thanks  = Konektor_Campaign::get_thanks_config( $campaign );
+        $cfg    = Konektor_Campaign::get_form_config( $campaign );
+        $thanks = Konektor_Campaign::get_thanks_config( $campaign );
 
-        // Add store/product to config for embed renderer
         $cfg['store_name']   = $campaign->store_name;
         $cfg['product_name'] = $campaign->product_name;
 

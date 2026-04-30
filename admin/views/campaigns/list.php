@@ -33,7 +33,7 @@
     $url = Konektor_Campaign::get_url($c);
     $type_badge = $c->type === 'form'
       ? '<span class="knk-badge knk-badge-blue"><i class="fa-solid fa-clipboard-list"></i> Form</span>'
-      : '<span class="knk-badge knk-badge-green"><i class="fa-brands fa-whatsapp"></i> WA Link</span>';
+      : '<span class="knk-badge knk-badge-green"><i class="fa-solid fa-link"></i> Link</span>';
     $status_badge = $c->status === 'active'
       ? '<span class="knk-badge knk-badge-green">Aktif</span>'
       : '<span class="knk-badge knk-badge-gray">Nonaktif</span>';

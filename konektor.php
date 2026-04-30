@@ -3,7 +3,7 @@
  * Plugin Name: Konektor - CS Rotator & Lead Management
  * Plugin URI: https://hanifprm.my.id
  * Description: CS Rotator, Lead Management, Custom Form, Telegram Bot, Meta CAPI, Google Ads, TikTok Ads integration with full analytics and security.
- * Version: 1.0.1
+ * Version: 1.0.3
  * Author: Hanif Pramono
  * Author URI: https://hanifprm.my.id
  * License: GPL-3.0-or-later
@@ -28,11 +28,11 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'KONEKTOR_VERSION', '1.0.1' );
+define( 'KONEKTOR_VERSION', '1.0.6' );
 define( 'KONEKTOR_PLUGIN_FILE', __FILE__ );
 define( 'KONEKTOR_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'KONEKTOR_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'KONEKTOR_DB_VERSION', '1.2.0' );
+define( 'KONEKTOR_DB_VERSION', '1.3.0' );
 // KONEKTOR_ENCRYPTION_KEY di-define setelah WordPress fully loaded (di konektor_init)
 
 require_once KONEKTOR_PLUGIN_DIR . 'includes/class-konektor-install.php';
@@ -47,6 +47,8 @@ require_once KONEKTOR_PLUGIN_DIR . 'includes/class-konektor-lead.php';
 require_once KONEKTOR_PLUGIN_DIR . 'includes/class-konektor-blocker.php';
 require_once KONEKTOR_PLUGIN_DIR . 'includes/class-konektor-analytics.php';
 require_once KONEKTOR_PLUGIN_DIR . 'includes/class-konektor-settings.php';
+require_once KONEKTOR_PLUGIN_DIR . 'includes/class-konektor-logger.php';
+require_once KONEKTOR_PLUGIN_DIR . 'includes/class-konektor-shortcode.php';
 require_once KONEKTOR_PLUGIN_DIR . 'includes/integrations/class-konektor-telegram.php';
 require_once KONEKTOR_PLUGIN_DIR . 'includes/integrations/class-konektor-meta.php';
 require_once KONEKTOR_PLUGIN_DIR . 'includes/integrations/class-konektor-google.php';
@@ -88,10 +90,10 @@ function konektor_init() {
 
     Konektor_Router::init();
     Konektor_API::init();
+    Konektor_Shortcode::init();
     Konektor_Blocker::init();
     if ( is_admin() ) {
         Konektor_Admin::init();
     }
 }
 add_action( 'plugins_loaded', 'konektor_init' );
- 

@@ -8,6 +8,7 @@
 <!-- Tab Nav -->
 <div class="knk-ptabs" style="margin-bottom:0;border-bottom:2px solid var(--g200)">
   <button type="button" class="knk-ptab active" data-stab="general">Umum</button>
+  <button type="button" class="knk-ptab" data-stab="test-pixel"><i class="fa-solid fa-flask"></i> Test Peristiwa API</button>
   <button type="button" class="knk-ptab" data-stab="blocked">Daftar Diblokir</button>
 </div>
 
@@ -78,6 +79,23 @@
       </div>
     </div>
 
+    <!-- Debug Log -->
+    <div class="knk-card">
+      <div class="knk-card-head"><span class="knk-card-title"><i class="fa-solid fa-bug"></i> Debug Log API</span></div>
+      <div class="knk-card-body">
+        <div class="knk-sw-row" style="padding-top:0">
+          <div class="knk-sw-row-label">
+            <strong>Aktifkan Log API</strong>
+            <span class="knk-hint">Rekam semua request &amp; response ke Meta CAPI, TikTok Events API, dan Snack/Kwai Event API. Lihat di menu <a href="<?php echo esc_url(admin_url('admin.php?page=konektor-log')); ?>">Log API</a>.<br><span style="color:#dc2626">Nonaktifkan di production — log menyimpan payload API ke database.</span></span>
+          </div>
+          <label class="knk-sw">
+            <input type="checkbox" name="debug_log" value="1" <?php checked($settings['debug_log'] ?? '0', '1'); ?>>
+            <span class="knk-sw-track"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
     <!-- Save -->
     <div class="knk-card">
       <div class="knk-card-body" style="display:flex;align-items:center;gap:14px">
@@ -88,6 +106,142 @@
 
   </div>
   </form>
+</div>
+
+<!-- Tab: Test Peristiwa -->
+<div class="knk-stab-content knk-hidden" id="stab-test-pixel">
+  <div style="margin-top:20px">
+
+  <!-- Debug: cek config kampanye yang tersimpan -->
+  <div class="knk-card" style="border-color:var(--warn);border-width:2px">
+    <div class="knk-card-head" style="background:#fffbeb">
+      <span class="knk-card-title"><i class="fa-solid fa-bug"></i> Debug Config Kampanye (cek pixel_config tersimpan di DB)</span>
+    </div>
+    <div class="knk-card-body">
+      <p style="font-size:13px;color:var(--g600);margin:0 0 12px">Pilih kampanye lalu klik <strong>Cek Config</strong> untuk melihat apakah pixel_config (token, pixel_id, dsb) benar-benar tersimpan di database.</p>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <select id="dbg-campaign-id" class="knk-select" style="max-width:280px">
+          <option value="">-- Pilih Kampanye --</option>
+          <?php
+          $all_camps = Konektor_Campaign::get_all();
+          foreach ( $all_camps as $c ) {
+              echo '<option value="' . (int)$c->id . '">' . esc_html( $c->name ) . ' (ID: ' . (int)$c->id . ')</option>';
+          }
+          ?>
+        </select>
+        <input type="text" id="dbg-test-code" class="knk-input" style="max-width:180px" placeholder="Test Event Code (opsional)">
+        <button type="button" id="dbg-check-btn" class="knk-btn knk-btn-ghost"><i class="fa-solid fa-magnifying-glass"></i> Cek + Fire Test</button>
+      </div>
+      <div class="knk-hint">Isi <strong>Test Event Code</strong> (misal TEST36491) untuk sekaligus fire CAPI langsung dari config kampanye — hasilnya muncul di bawah dan di Meta Test Events.</div>
+      <pre id="dbg-result" style="display:none;margin-top:14px;background:var(--g900);color:#93c5fd;padding:14px;border-radius:8px;font-size:12px;overflow:auto;max-height:320px;line-height:1.6"></pre>
+    </div>
+  </div>
+
+  <div class="knk-card">
+    <div class="knk-card-head">
+      <span class="knk-card-title"><i class="fa-solid fa-flask"></i> Test Peristiwa API — Meta / TikTok / Snack</span>
+    </div>
+    <div class="knk-card-body">
+      <p style="font-size:13px;color:var(--g600);margin:0 0 16px">Uji kirim event langsung ke server API platform. Isi credential dan klik <strong>Kirim Test</strong>. Hasilnya akan tampil di bawah.</p>
+
+      <!-- Platform & Event Type -->
+      <div class="knk-g2" style="margin-bottom:14px">
+        <div class="knk-field">
+          <label class="knk-label">Platform</label>
+          <select id="tp-platform" class="knk-select">
+            <option value="meta">Meta (Facebook) CAPI</option>
+            <option value="tiktok">TikTok Events API</option>
+            <option value="snack">Snack / Kwai Event API</option>
+          </select>
+        </div>
+        <div class="knk-field">
+          <label class="knk-label">Jenis Event</label>
+          <select id="tp-event-type" class="knk-select">
+            <option value="page_load">Page Load (PageView)</option>
+            <option value="form_submit">Form Submit (Lead)</option>
+            <option value="thanks_page">Thanks Page (Purchase)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Meta Fields -->
+      <div id="tp-fields-meta">
+        <div class="knk-g2" style="margin-bottom:14px">
+          <div class="knk-field">
+            <label class="knk-label">Pixel ID <span class="knk-req">*</span></label>
+            <input type="text" id="tp-meta-pixel-id" class="knk-input" placeholder="1234567890">
+          </div>
+          <div class="knk-field">
+            <label class="knk-label">Access Token <span class="knk-req">*</span></label>
+            <input type="text" id="tp-meta-token" class="knk-input" placeholder="EAAxxxx...">
+          </div>
+        </div>
+        <div class="knk-g2" style="margin-bottom:14px">
+          <div class="knk-field">
+            <label class="knk-label">Test Event Code <span class="knk-hint" style="display:inline">(opsional — dari Meta Test Events)</span></label>
+            <input type="text" id="tp-meta-test-code" class="knk-input" placeholder="TEST12345">
+            <div class="knk-hint">Isi agar event muncul di tab <em>Test Events</em> di Meta Events Manager tanpa dihitung sebagai event nyata.</div>
+          </div>
+          <div class="knk-field">
+            <label class="knk-label">Nama Event Custom <span class="knk-hint" style="display:inline">(override)</span></label>
+            <input type="text" id="tp-meta-event-override" class="knk-input" placeholder="Kosong = pakai default (PageView / Lead / Purchase)">
+          </div>
+        </div>
+      </div>
+
+      <!-- TikTok Fields -->
+      <div id="tp-fields-tiktok" style="display:none">
+        <div class="knk-g2" style="margin-bottom:14px">
+          <div class="knk-field">
+            <label class="knk-label">Pixel ID <span class="knk-req">*</span></label>
+            <input type="text" id="tp-tiktok-pixel-id" class="knk-input" placeholder="D25CQRBC77U91...">
+          </div>
+          <div class="knk-field">
+            <label class="knk-label">Access Token <span class="knk-req">*</span></label>
+            <input type="text" id="tp-tiktok-token" class="knk-input" placeholder="xxxx...">
+          </div>
+        </div>
+        <div class="knk-field" style="margin-bottom:14px">
+          <label class="knk-label">Test Event Code <span class="knk-hint" style="display:inline">(opsional)</span></label>
+          <input type="text" id="tp-tiktok-test-code" class="knk-input" placeholder="TEST12345">
+          <div class="knk-hint">Isi agar event muncul di tab <em>Test Events</em> di TikTok Ads Manager.</div>
+        </div>
+      </div>
+
+      <!-- Snack Fields -->
+      <div id="tp-fields-snack" style="display:none">
+        <div class="knk-g2" style="margin-bottom:14px">
+          <div class="knk-field">
+            <label class="knk-label">Pixel ID <span class="knk-req">*</span></label>
+            <input type="text" id="tp-snack-pixel-id" class="knk-input" placeholder="123456">
+          </div>
+          <div class="knk-field">
+            <label class="knk-label">Access Token <span class="knk-req">*</span></label>
+            <input type="text" id="tp-snack-token" class="knk-input" placeholder="xxxx...">
+          </div>
+        </div>
+      </div>
+
+      <!-- Tombol -->
+      <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
+        <button type="button" id="tp-send-btn" class="knk-btn knk-btn-primary">
+          <i class="fa-solid fa-paper-plane"></i> Kirim Test Event
+        </button>
+        <span id="tp-status" style="font-size:13px"></span>
+      </div>
+
+      <!-- Hasil -->
+      <div id="tp-result" style="display:none;margin-top:18px">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--g500);margin-bottom:6px">Hasil Response</div>
+        <div id="tp-result-banner" style="padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:10px"></div>
+        <div style="font-size:11px;font-weight:600;color:var(--g500);margin-bottom:4px">HTTP Status &amp; Body:</div>
+        <pre id="tp-result-body" style="background:var(--g900);color:#86efac;padding:14px;border-radius:8px;font-size:12px;overflow:auto;max-height:260px;margin:0;line-height:1.6"></pre>
+      </div>
+
+    </div>
+  </div>
+
+  </div>
 </div>
 
 <!-- Tab: Blocked -->

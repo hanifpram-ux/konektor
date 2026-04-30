@@ -85,7 +85,7 @@ var konektorDailyData = <?php echo wp_json_encode(array_map(fn($r) => ['date'=>$
       <td>
         <?php echo $row->type === 'form'
           ? '<span class="knk-badge knk-badge-blue">Form</span>'
-          : '<span class="knk-badge knk-badge-green">WA Link</span>'; ?>
+          : '<span class="knk-badge knk-badge-green">Link</span>'; ?>
       </td>
       <td><?php echo number_format($row->total_leads); ?></td>
       <td><span style="color:var(--ok);font-weight:500"><?php echo number_format($row->purchased); ?></span></td>

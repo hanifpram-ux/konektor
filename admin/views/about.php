@@ -40,7 +40,7 @@
             ['fa-telegram','Notifikasi Telegram','Bot Telegram kirim notifikasi real-time + perintah update status'],
             ['fa-chart-bar','Analitik','Statistik per kampanye, per operator, dan grafik harian'],
             ['fa-code','Embed Form','Sematkan form ke landing page manapun via kode HTML satu baris'],
-            ['fa-link','WA Link Tracking','Rekam klik link WA beserta cookie dan IP secara otomatis'],
+            ['fa-link','Link Tracking','Rekam klik link beserta cookie dan IP secara otomatis'],
             ['fa-chart-line','Pixel Tracking','Meta CAPI, Google Ads, TikTok Pixel, dan Snack Video Pixel'],
           ];
           foreach ($features as [$icon,$title,$desc]) : ?>

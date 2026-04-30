@@ -14,14 +14,15 @@ class Konektor_Blocker {
         }
     }
 
-    public static function is_blocked( $campaign_id = null ) {
+    // Blokir berlaku global — tidak dibatasi per kampanye
+    public static function is_blocked() {
         global $wpdb;
         $ip        = Konektor_Helper::get_client_ip();
         $cookie_id = Konektor_Lead::resolve_vid( sanitize_text_field( $_GET['_vid'] ?? '' ) );
         $table     = $wpdb->prefix . 'konektor_blocked';
 
-        $conditions  = [];
-        $params      = [];
+        $conditions = [];
+        $params     = [];
 
         if ( $ip ) {
             $conditions[] = 'ip_address = %s';
@@ -34,17 +35,16 @@ class Konektor_Blocker {
 
         if ( empty( $conditions ) ) return false;
 
-        $cond_sql     = implode( ' OR ', $conditions );
-        $campaign_sql = $campaign_id ? 'AND (campaign_id IS NULL OR campaign_id = ' . (int) $campaign_id . ')' : 'AND campaign_id IS NULL';
-
-        $sql = "SELECT id FROM $table WHERE ($cond_sql) $campaign_sql LIMIT 1";
-        return (bool) $wpdb->get_var( $wpdb->prepare( $sql, ...$params ) );
+        $cond_sql = implode( ' OR ', $conditions );
+        return (bool) $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM $table WHERE ($cond_sql) LIMIT 1",
+            ...$params
+        ) );
     }
 
     public static function block( $data, $operator_id = null ) {
         global $wpdb;
         $wpdb->insert( $wpdb->prefix . 'konektor_blocked', [
-            'campaign_id' => ! empty( $data['campaign_id'] ) ? (int) $data['campaign_id'] : null,
             'ip_address'  => sanitize_text_field( $data['ip_address'] ?? '' ),
             'fingerprint' => sanitize_text_field( $data['fingerprint'] ?? '' ),
             'cookie_id'   => sanitize_text_field( $data['cookie_id'] ?? '' ),
@@ -78,9 +78,9 @@ class Konektor_Blocker {
         if ( ! $lead ) return;
         $lead = Konektor_Lead::decrypt_lead( $lead );
         self::block( [
-            'campaign_id' => $lead->campaign_id,
             'ip_address'  => $lead->ip_address,
             'fingerprint' => $lead->fingerprint,
+            'cookie_id'   => $lead->cookie_id,
             'phone'       => $lead->phone,
             'email'       => $lead->email,
             'reason'      => $reason,

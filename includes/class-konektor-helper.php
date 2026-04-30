@@ -37,7 +37,9 @@ class Konektor_Helper {
             return sanitize_text_field( $_COOKIE[ $cookie_name ] );
         }
         $id = Konektor_Crypto::generate_token( 16 );
-        setcookie( $cookie_name, $id, time() + YEAR_IN_SECONDS, '/', '', is_ssl(), true );
+        // httponly=false agar JS embed di landing page bisa baca cookie yang sama
+        setcookie( $cookie_name, $id, time() + YEAR_IN_SECONDS, '/', '', is_ssl(), false );
+        $_COOKIE[ $cookie_name ] = $id;
         return $id;
     }
 

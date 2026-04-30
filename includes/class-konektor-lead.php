@@ -45,77 +45,13 @@ class Konektor_Lead {
         return sanitize_text_field( $vid );
     }
 
-    /**
-     * Core double-check: cookie (cross-campaign), fingerprint, IP.
-     * $campaign_ids: array of campaign IDs to check against (supports form+wa_link on same page).
-     */
-    private static function has_prior_lead( array $campaign_ids, $cookie_id = '', $fingerprint = '', $ip = '', $require_phone_email = false ) {
-        global $wpdb;
-        $table      = $wpdb->prefix . 'konektor_leads';
-        $id_placeholders = implode( ',', array_fill( 0, count( $campaign_ids ), '%d' ) );
-
-        if ( $cookie_id ) {
-            $count = $wpdb->get_var( $wpdb->prepare(
-                "SELECT COUNT(*) FROM $table WHERE campaign_id IN ($id_placeholders) AND cookie_id = %s AND is_double = 0",
-                ...array_merge( $campaign_ids, [ $cookie_id ] )
-            ) );
-            if ( (int) $count > 0 ) return true;
-        }
-
-        if ( $fingerprint ) {
-            $count = $wpdb->get_var( $wpdb->prepare(
-                "SELECT COUNT(*) FROM $table WHERE campaign_id IN ($id_placeholders) AND fingerprint = %s AND is_double = 0",
-                ...array_merge( $campaign_ids, [ $fingerprint ] )
-            ) );
-            if ( (int) $count > 0 ) return true;
-        }
-
-        if ( $ip && ! $require_phone_email ) {
-            $count = $wpdb->get_var( $wpdb->prepare(
-                "SELECT COUNT(*) FROM $table WHERE campaign_id IN ($id_placeholders) AND ip_address = %s AND is_double = 0",
-                ...array_merge( $campaign_ids, [ $ip ] )
-            ) );
-            if ( (int) $count > 0 ) return true;
-        }
-
+    // Tidak dipakai di flow utama (router pakai transient), dipertahankan untuk API
+    public static function check_double( $campaign_id, $phone, $email, $vid_from_body = '' ) {
         return false;
     }
 
-    /**
-     * Get all campaign IDs that share the same slug-group (same base slug on same site).
-     * For now we resolve sibling campaigns by matching allowed_domains or just use provided IDs.
-     * Callers pass their own campaign_id; we also look up sibling campaign IDs that share cookie space.
-     */
-    private static function sibling_campaign_ids( $campaign_id ) {
-        global $wpdb;
-        // Find all campaigns whose leads share the same cookie (any campaign on the same site)
-        // Simplest: return all campaign IDs — cookie is site-scoped anyway
-        $ids = $wpdb->get_col( "SELECT id FROM {$wpdb->prefix}konektor_campaigns WHERE status = 'active'" );
-        return array_map( 'intval', $ids ?: [ $campaign_id ] );
-    }
-
-    public static function check_double( $campaign_id, $phone, $email, $vid_from_body = '' ) {
-        $cookie_id   = self::resolve_vid( $vid_from_body );
-        $fingerprint = Konektor_Crypto::fingerprint(
-            Konektor_Helper::sanitize_phone( $phone ),
-            sanitize_email( $email )
-        );
-        $ip          = Konektor_Helper::get_client_ip();
-        $ids         = self::sibling_campaign_ids( $campaign_id );
-
-        // IP only checked when phone/email present (avoid false positives on shared IPs)
-        $ip_to_pass = ( $phone || $email ) ? $ip : '';
-
-        return self::has_prior_lead( $ids, $cookie_id, $fingerprint, $ip_to_pass );
-    }
-
-    // Double check for WA link clicks (no form data — cookie + IP only)
     public static function check_double_wa( $campaign_id, $vid_from_qs = '' ) {
-        $cookie_id = self::resolve_vid( $vid_from_qs );
-        $ip        = Konektor_Helper::get_client_ip();
-        $ids       = self::sibling_campaign_ids( $campaign_id );
-
-        return self::has_prior_lead( $ids, $cookie_id, '', $ip );
+        return false;
     }
 
     public static function mark_double( $id ) {

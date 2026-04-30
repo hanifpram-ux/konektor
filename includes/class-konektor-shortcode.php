@@ -39,7 +39,7 @@ class Konektor_Shortcode {
         }
 
         // Block check
-        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked( $campaign->id ) ) {
+        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked() ) {
             $msg = $campaign->block_message ?: 'Akses Anda telah diblokir.';
             return '<div class="konektor-blocked">' . esc_html( $msg ) . '</div>';
         }
@@ -62,7 +62,7 @@ class Konektor_Shortcode {
 
         if ( ! $campaign || $campaign->status !== 'active' ) return '';
 
-        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked( $campaign->id ) ) {
+        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked() ) {
             return '<div class="konektor-blocked">' . esc_html( $campaign->block_message ?: 'Akses diblokir.' ) . '</div>';
         }
 

@@ -95,14 +95,14 @@ echo wp_json_encode($op_data);
 <div class="knk-url-banner">
   <div class="knk-url-banner-icon">
     <?php echo $campaign->type === 'wa_link'
-      ? '<i class="fa-brands fa-whatsapp" style="font-size:22px;color:var(--p)"></i>'
+      ? '<i class="fa-solid fa-link" style="font-size:22px;color:var(--p)"></i>'
       : '<i class="fa-solid fa-clipboard-list" style="font-size:22px;color:var(--p)"></i>'; ?>
   </div>
   <div class="knk-url-banner-body">
     <?php if ($campaign->type === 'wa_link') :
         $wa_embed_code = Konektor_Campaign::get_wa_embed_code($campaign);
     ?>
-      <div class="knk-url-banner-label">URL WA Link — pasang di tombol Elementor</div>
+      <div class="knk-url-banner-label">URL Link — pasang di tombol Elementor / landing page</div>
       <div class="knk-url-banner-row">
         <input class="knk-url-field" readonly value="<?php echo esc_url($camp_url); ?>" onclick="this.select()">
         <button type="button" class="knk-btn knk-btn-ghost knk-btn-sm" onclick="navigator.clipboard.writeText(this.previousElementSibling.value);this.textContent='Disalin'"><i class="fa-regular fa-copy"></i> Salin</button>
@@ -156,7 +156,7 @@ echo wp_json_encode($op_data);
           <label class="knk-label">Tipe</label>
           <select name="type" id="camp-type" class="knk-select">
             <option value="form"    <?php selected($preset_type, 'form'); ?>><i class="fa-solid fa-clipboard-list"></i> Form Order</option>
-            <option value="wa_link" <?php selected($preset_type, 'wa_link'); ?>><i class="fa-brands fa-whatsapp"></i> Link WA Langsung</option>
+            <option value="wa_link" <?php selected($preset_type, 'wa_link'); ?>>Link</option>
           </select>
           <?php if ($is_new) : ?>
           <div class="knk-hint"><a href="<?php echo admin_url('admin.php?page=konektor-campaigns&action=new'); ?>" style="color:var(--g500)"><i class="fa-solid fa-arrow-left"></i> Ganti jenis kampanye</a></div>
@@ -393,7 +393,7 @@ echo wp_json_encode($op_data);
           <?php endforeach; ?>
         </div>
         <?php if ($preset_type === 'wa_link') : ?>
-        <p class="knk-hint">WA Link tidak memiliki data customer — hanya shortcode <code>[product]</code> dan <code>[oname]</code> yang tersedia.</p>
+        <p class="knk-hint">Kampanye Link tidak memiliki data customer — hanya shortcode <code>[product]</code> dan <code>[oname]</code> yang tersedia.</p>
         <?php endif; ?>
       </div>
     </div>
@@ -476,8 +476,30 @@ echo wp_json_encode($op_data);
 
       <!-- TikTok -->
       <div class="knk-pcontent" data-ptab="tiktok">
+        <p class="knk-hint" style="margin-bottom:12px">Menggunakan <strong>TikTok Events API</strong> (server-to-server). Pixel ID + Access Token dari TikTok Ads Manager → Assets → Web Events → Settings.</p>
         <div class="knk-g2">
-          <div class="knk-field"><label class="knk-label">TikTok Pixel ID</label><input type="text" name="pixel_config[tiktok][pixel_id]" class="knk-input" value="<?php echo esc_attr($tiktok_cfg['pixel_id']??''); ?>" placeholder="CXXXXXXXXXX"></div>
+          <div class="knk-field">
+            <label class="knk-label">TikTok Pixel ID</label>
+            <input type="text" name="pixel_config[tiktok][pixel_id]" class="knk-input" value="<?php echo esc_attr($tiktok_cfg['pixel_id']??''); ?>" placeholder="CXXXXXXXXXX">
+          </div>
+          <div class="knk-field">
+            <label class="knk-label">Access Token <span class="knk-hint">(Generate di Settings pixel)</span></label>
+            <input type="text" name="pixel_config[tiktok][access_token]" class="knk-input" value="<?php echo esc_attr($tiktok_cfg['access_token']??''); ?>" placeholder="xxxxx...">
+          </div>
+          <div class="knk-field">
+            <label class="knk-label">Currency</label>
+            <input type="text" name="pixel_config[tiktok][currency]" class="knk-input" value="<?php echo esc_attr($tiktok_cfg['currency']??'IDR'); ?>" placeholder="IDR">
+          </div>
+          <div class="knk-field">
+            <label class="knk-label">Value (opsional)</label>
+            <input type="number" step="any" name="pixel_config[tiktok][value]" class="knk-input" value="<?php echo esc_attr($tiktok_cfg['value']??''); ?>" placeholder="0">
+          </div>
+          <div class="knk-field">
+            <label class="knk-label">Test Event Code <span class="knk-hint">(opsional, dari Events Manager)</span></label>
+            <input type="text" name="pixel_config[tiktok][test_event_code]" class="knk-input" value="<?php echo esc_attr($tiktok_cfg['test_event_code']??''); ?>" placeholder="TEST12345">
+          </div>
+        </div>
+        <div class="knk-g<?php echo $is_wa ? '2' : '3'; ?>">
           <div class="knk-field">
             <label class="knk-label">Event Page Load</label>
             <?php echo knk_evt_select('pixel_config[tiktok][page_load_event]', $tiktok_cfg['page_load_event']??'PageView', $tiktok_events); ?>
@@ -495,13 +517,116 @@ echo wp_json_encode($op_data);
         </div>
       </div>
 
-      <!-- Snack Video -->
+      <!-- Snack Video / Kwai -->
       <div class="knk-pcontent" data-ptab="snack">
-        <div class="knk-field">
-          <label class="knk-label">Kode Pixel Snack Video</label>
-          <textarea name="pixel_config[snack][html]" class="knk-input knk-mono" rows="8"
-            placeholder="Paste kode pixel dari akun Snack Video (Kwai for Business) di sini..."><?php echo esc_textarea($snack_cfg['html']??''); ?></textarea>
+        <p class="knk-hint" style="margin-bottom:12px">Menggunakan <strong>Kwai Event API</strong> (server-to-server). Buat di Kwai for Business → Web Events → Event API, lalu salin Pixel ID dan Access Token.</p>
+        <div class="knk-g2">
+          <div class="knk-field">
+            <label class="knk-label">Pixel ID</label>
+            <input type="text" name="pixel_config[snack][pixel_id]" class="knk-input" value="<?php echo esc_attr($snack_cfg['pixel_id']??''); ?>" placeholder="Zp6x5j5sUuaSdnCgsJl7hA">
+          </div>
+          <div class="knk-field">
+            <label class="knk-label">Access Token</label>
+            <input type="text" name="pixel_config[snack][access_token]" class="knk-input" value="<?php echo esc_attr($snack_cfg['access_token']??''); ?>" placeholder="YUr9HVpJhC2iDtwF/Pws2A==">
+          </div>
+          <div class="knk-field">
+            <label class="knk-label">Currency</label>
+            <input type="text" name="pixel_config[snack][currency]" class="knk-input" value="<?php echo esc_attr($snack_cfg['currency']??'IDR'); ?>" placeholder="IDR">
+          </div>
+          <div class="knk-field">
+            <label class="knk-label">Value (opsional)</label>
+            <input type="number" step="any" name="pixel_config[snack][value]" class="knk-input" value="<?php echo esc_attr($snack_cfg['value']??''); ?>" placeholder="0">
+          </div>
         </div>
+        <?php
+        $snack_events = [
+          'EVENT_CONTENT_VIEW'          => 'EVENT_CONTENT_VIEW — Page viewed',
+          'EVENT_FORM_SUBMIT'           => 'EVENT_FORM_SUBMIT — Form submitted',
+          'EVENT_COMPLETE_REGISTRATION' => 'EVENT_COMPLETE_REGISTRATION — Registration completed',
+          'EVENT_PURCHASE'              => 'EVENT_PURCHASE — Payment completed',
+          'EVENT_COMPLETE_TRANSACTION'  => 'EVENT_COMPLETE_TRANSACTION — Transaction completed',
+          'EVENT_PLACE_ORDER'           => 'EVENT_PLACE_ORDER — Order placed',
+          'EVENT_INITIATED_CHECKOUT'    => 'EVENT_INITIATED_CHECKOUT — Checkout started',
+          'EVENT_ADD_TO_CART'           => 'EVENT_ADD_TO_CART — Added to cart',
+          'EVENT_ADD_PAYMENT_INFO'      => 'EVENT_ADD_PAYMENT_INFO — Payment info added',
+          'EVENT_BUTTON_CLICK'          => 'EVENT_BUTTON_CLICK — Button clicked',
+          'EVENT_CONTACT'               => 'EVENT_CONTACT — Contact/consultation',
+          'EVENT_SUBSCRIBE'             => 'EVENT_SUBSCRIBE — Subscribed',
+          'EVENT_SEARCH'                => 'EVENT_SEARCH — Search made',
+          'EVENT_DOWNLOAD'              => 'EVENT_DOWNLOAD — Download clicked',
+          'EVENT_ADD_TO_WISHLIST'       => 'EVENT_ADD_TO_WISHLIST — Added to wishlist',
+          'EVENT_FIRST_DEPOSIT'         => 'EVENT_FIRST_DEPOSIT — First deposit',
+          'EVENT_CREDIT_APPROVAL'       => 'EVENT_CREDIT_APPROVAL — Credit approved',
+          'EVENT_LOAN_APPLICATION'      => 'EVENT_LOAN_APPLICATION — Loan application',
+          'EVENT_LOAN_CREDIT'           => 'EVENT_LOAN_CREDIT — Loan approval',
+          'EVENT_LOAN_DISBURSAL'        => 'EVENT_LOAN_DISBURSAL — Loan disbursement',
+          'EVENT_CREDIT_CARD_APPLICATION' => 'EVENT_CREDIT_CARD_APPLICATION — Credit card application',
+          'EVENT_PURCHASE_1_DAY'        => 'EVENT_PURCHASE_1_DAY — Purchase 1 day',
+          'EVENT_PURCHASE_2_DAY'        => 'EVENT_PURCHASE_2_DAY — Purchase 2 day',
+          'EVENT_PURCHASE_3_DAY'        => 'EVENT_PURCHASE_3_DAY — Purchase 3 day',
+          'EVENT_PURCHASE_7_DAY'        => 'EVENT_PURCHASE_7_DAY — Purchase 7 day',
+          'EVENT_KEY_INAPP_EVENT'       => 'EVENT_KEY_INAPP_EVENT — Key in-app event',
+          'EVENT_KEY_INAPP_EVENT_1'     => 'EVENT_KEY_INAPP_EVENT_1',
+          'EVENT_KEY_INAPP_EVENT_2'     => 'EVENT_KEY_INAPP_EVENT_2',
+          'EVENT_KEY_INAPP_EVENT_3'     => 'EVENT_KEY_INAPP_EVENT_3',
+          'EVENT_VALUE_PRODUCE'         => 'EVENT_VALUE_PRODUCE — Value produce',
+          'EVENT_AD_VIEW'               => 'EVENT_AD_VIEW — Ad view (In-Web)',
+          'EVENT_AD_CLICK'              => 'EVENT_AD_CLICK — Ad click (In-Web)',
+        ];
+        function knk_snack_select($name, $val, $opts) {
+          $s = '<select name="'.esc_attr($name).'" class="knk-select">';
+          foreach ($opts as $k => $label) {
+            $s .= '<option value="'.esc_attr($k).'"'.($val===$k?' selected':'').'>'.esc_html($label).'</option>';
+          }
+          return $s.'</select>';
+        }
+        ?>
+        <div class="knk-g<?php echo $is_wa ? '2' : '3'; ?>">
+          <div class="knk-field">
+            <label class="knk-label">Event Page Load</label>
+            <?php echo knk_snack_select('pixel_config[snack][page_load_event]', $snack_cfg['page_load_event']??'EVENT_CONTENT_VIEW', $snack_events); ?>
+          </div>
+          <div class="knk-field">
+            <label class="knk-label"><?php echo $is_wa ? 'Event WA Click' : 'Event Form Submit'; ?></label>
+            <?php echo knk_snack_select('pixel_config[snack][form_submit_event]', $snack_cfg['form_submit_event']??'EVENT_FORM_SUBMIT', $snack_events); ?>
+          </div>
+          <?php if (!$is_wa) : ?>
+          <div class="knk-field">
+            <label class="knk-label">Event Thanks Page</label>
+            <?php echo knk_snack_select('pixel_config[snack][thanks_page_event]', $snack_cfg['thanks_page_event']??'EVENT_COMPLETE_REGISTRATION', $snack_events); ?>
+          </div>
+          <?php endif; ?>
+        </div>
+
+        <!-- Test Mode -->
+        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;margin-top:8px">
+          <p style="font-size:13px;font-weight:700;margin-bottom:8px;color:#92400e">🧪 Test Mode</p>
+          <p class="knk-hint" style="margin-bottom:10px">
+            Cara test: buka tab <strong>Test Events</strong> di Kwai for Business, salin kode test (click_id), tempel di bawah.
+            Kunjungi landing page dengan <code>?click_id=KODE_TEST</code>, lakukan konversi, cek hasilnya di dashboard.
+          </p>
+          <div class="knk-sw-row" style="margin-bottom:10px">
+            <div class="knk-sw-row-label">
+              <strong>Aktifkan Test Mode</strong>
+              <span class="knk-hint">trackFlag=true, testFlag=true</span>
+            </div>
+            <label class="knk-switch">
+              <input type="checkbox" name="pixel_config[snack][test_mode]" value="1" id="snack-test-toggle" <?php checked(!empty($snack_cfg['test_mode'])); ?>>
+              <span class="knk-switch-slider"></span>
+            </label>
+          </div>
+          <div id="snack-test-clickid-row" style="<?php echo empty($snack_cfg['test_mode']) ? 'display:none' : ''; ?>">
+            <label class="knk-label">Test Click ID <span style="font-weight:400;opacity:.7">(dari tab Test Events di Kwai for Business)</span></label>
+            <input type="text" name="pixel_config[snack][test_click_id]" class="knk-input" value="<?php echo esc_attr($snack_cfg['test_click_id']??''); ?>" placeholder="rY3vrGB7ICRbG4poTCqDtA">
+          </div>
+        </div>
+        <script>
+        (function(){
+          var tog=document.getElementById('snack-test-toggle');
+          var row=document.getElementById('snack-test-clickid-row');
+          if(tog&&row)tog.addEventListener('change',function(){row.style.display=this.checked?'':'none';});
+        })();
+        </script>
       </div>
 
     </div>

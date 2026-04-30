@@ -74,7 +74,7 @@ class Konektor_Campaign {
         $row = [
             'name'                => sanitize_text_field( $data['name'] ),
             'slug'                => $slug,
-            'type'                => in_array( $data['type'], ['form','wa_link'] ) ? $data['type'] : 'form',
+            'type'                => in_array( $data['type'], ['form','wa_link','link'] ) ? $data['type'] : 'form',
             'store_name'          => sanitize_text_field( $data['store_name'] ?? '' ),
             'product_name'        => sanitize_text_field( $data['product_name'] ?? '' ),
             'form_config'         => ! empty( $data['form_config'] ) ? wp_json_encode( $data['form_config'] ) : null,
@@ -128,94 +128,100 @@ class Konektor_Campaign {
         ) );
     }
 
-    // Script kecil untuk set/baca cookie konektor_vid di browser visitor
-    private static function get_cookie_script() {
-        return "<script>\n"
-             . "(function(){var n='konektor_vid',c=document.cookie.match('(?:^|;)\\\\s*'+n+'=([^;]*)');if(!c){var v='';var ch='0123456789abcdef';for(var i=0;i<32;i++)v+=ch[Math.floor(Math.random()*16)];document.cookie=n+'='+v+';path=/;max-age=31536000;SameSite=Lax';}})()\n"
-             . "</script>\n";
+    // JS helper: baca/buat visitor ID cookie
+    private static function get_cookie_js( $campaign ) {
+        return "  function _knkVid(){var m=document.cookie.match('(?:^|;)\\\\s*konektor_vid=([^;]*)');if(m)return decodeURIComponent(m[1]);var ch='0123456789abcdef',v='';for(var i=0;i<32;i++)v+=ch[Math.floor(Math.random()*16)];document.cookie='konektor_vid='+v+';path=/;max-age=31536000;SameSite=Lax';return v;}\n";
+    }
+
+    /**
+     * Buat pixel ping JS dengan dedup — kalau pixel ID sama sudah di-fire oleh embed lain
+     * di halaman yang sama, skip. Key berdasarkan kombinasi pixel ID semua platform.
+     */
+    private static function get_pixel_ping( $campaign ) {
+        $meta_cfg   = Konektor_Meta::get_config( $campaign );
+        $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
+        $snack_cfg  = Konektor_Snack::get_config( $campaign );
+
+        // Buat key unik dari kombinasi pixel ID yang aktif
+        $key_parts = array_filter([
+            $meta_cfg['pixel_id']   ?? '',
+            $tiktok_cfg['pixel_id'] ?? '',
+            $snack_cfg['pixel_id']  ?? '',
+        ]);
+
+        // Kalau tidak ada pixel yang dikonfigurasi, skip ping
+        if ( empty( $key_parts ) ) return '';
+
+        $dedup_key = esc_js( 'knk_px_' . md5( implode( '|', $key_parts ) ) );
+        $pixel_url = esc_js( home_url( '/' . Konektor_Helper::get_setting( 'base_slug', 'konektor' ) . '/' . $campaign->slug . '/pixel/' ) );
+
+        // Cek global flag — kalau pixel ID combo ini sudah di-fire di halaman ini, skip
+        return "<script>(function(){"
+             . "if(window['{$dedup_key}'])return;"
+             . "window['{$dedup_key}']=1;"
+             . "var u='" . $pixel_url . "';"
+             . "fetch(u+'?url='+encodeURIComponent(location.href),{method:'GET',mode:'no-cors',credentials:'omit'}).catch(function(){});"
+             . "})();</script>\n";
     }
 
     public static function get_wa_embed_code( $campaign ) {
-        $url        = self::get_url( $campaign );
-        $store      = esc_html( $campaign->store_name ?? '' );
-        $product    = esc_html( $campaign->product_name ?? '' );
-        $camp_name  = esc_html( $campaign->name );
+        $url       = self::get_url( $campaign );
+        $camp_name = esc_html( $campaign->name );
+        $store     = esc_html( $campaign->store_name ?? '' );
 
-        $pixel_html = Konektor_Meta::get_pixel_script( $campaign, 'page_load' )
-                    . Konektor_Google::get_script( $campaign, 'page_load' )
-                    . Konektor_Tiktok::get_script( $campaign, 'page_load' )
-                    . Konektor_Snack::get_script( $campaign );
+        $cfg     = self::get_form_config( $campaign );
+        $cs      = $cfg['custom_style'] ?? [];
+        $acc     = $cs['color_accent']   ?: '#16a34a';
+        $btxt    = $cs['color_btn_text'] ?: '#ffffff';
+        $maxw    = $cs['max_width']      ?: '480px';
+        $rad     = $cs['border_radius']  ?: '12px';
+        $pad     = $cs['padding']        ?: '28px 24px';
+        $bfsz    = $cs['btn_font_size']  ?: '15px';
+        $bg_c    = $cs['color_bg']       ?: '#ffffff';
+        $btn_lbl = esc_html( $cfg['submit_label'] ?? 'Hubungi Sekarang' );
+        $url_esc = esc_url( $url );
 
-        $wa_cfg  = self::get_form_config( $campaign );
-        $cs      = $wa_cfg['custom_style'] ?? [];
-        $wa_bg   = $cs['color_bg']       ?: '#ffffff';
-        $wa_acc  = $cs['color_accent']   ?: '#16a34a';
-        $wa_text = $cs['color_text']     ?: '#0f172a';
-        $wa_btxt = $cs['color_btn_text'] ?: '#ffffff';
-        $wa_maxw = $cs['max_width']      ?: '480px';
-        $wa_rad  = $cs['border_radius']  ?: '12px';
-        $wa_pad  = $cs['padding']        ?: '28px 24px';
-        $wa_bfsz = $cs['btn_font_size']  ?: '15px';
+        $wa_icon = '<svg style="width:20px;height:20px;fill:currentColor;flex-shrink:0" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.117 1.528 5.852L0 24l6.335-1.508A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.002-1.368l-.36-.214-3.72.885.916-3.617-.234-.372A9.818 9.818 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182S21.818 6.57 21.818 12 17.43 21.818 12 21.818z"/></svg>';
 
-        $css = "<style>\n"
-             . ".knk-wa-wrap{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:{$wa_maxw};margin:0 auto;padding:{$wa_pad};background:{$wa_bg};border-radius:{$wa_rad};box-shadow:0 2px 12px rgba(0,0,0,.08);text-align:center}\n"
-             . ".knk-wa-wrap *{box-sizing:border-box}\n"
-             . ".knk-wa-store{margin:0 0 4px;font-size:12px;color:#64748b}\n"
-             . ".knk-wa-product{margin:0 0 20px;font-size:20px;font-weight:800;color:{$wa_text}}\n"
-             . ".knk-wa-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:14px 20px;background:{$wa_acc};color:{$wa_btxt};border:none;border-radius:8px;font-size:{$wa_bfsz};font-weight:700;cursor:pointer;text-decoration:none;font-family:inherit}\n"
-             . ".knk-wa-btn:hover{opacity:.92}\n"
-             . ".knk-wa-icon{width:22px;height:22px;fill:{$wa_btxt}}\n"
+        $css = "<style>"
+             . ".knk-wa{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:{$maxw};margin:0 auto;padding:{$pad};background:{$bg_c};border-radius:{$rad};box-shadow:0 2px 12px rgba(0,0,0,.08);text-align:center;box-sizing:border-box}"
+             . ".knk-wa *{box-sizing:border-box}"
+             . ".knk-wa-store{margin:0 0 16px;font-size:12px;color:#64748b}"
+             . ".knk-wa-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:14px 20px;background:{$acc};color:{$btxt};border:none;border-radius:8px;font-size:{$bfsz};font-weight:700;cursor:pointer;text-decoration:none;font-family:inherit;transition:opacity .2s}"
+             . ".knk-wa-btn:hover{opacity:.88}"
              . "</style>\n";
 
-        $wa_icon = '<svg class="knk-wa-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.117 1.528 5.852L0 24l6.335-1.508A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.002-1.368l-.36-.214-3.72.885.916-3.617-.234-.372A9.818 9.818 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182S21.818 6.57 21.818 12 17.43 21.818 12 21.818z"/></svg>';
-
-        $header = '';
-        if ( $store )   $header .= "  <p class=\"knk-wa-store\">{$store}</p>\n";
-        if ( $product ) $header .= "  <p class=\"knk-wa-product\">{$product}</p>\n";
-
-        $cookie_js = self::get_cookie_script();
-
-        $click_js = "<script>\n"
-            . "(function(){\n"
-            . "  var btn=document.currentScript.previousElementSibling.querySelector('.knk-wa-btn');\n"
+        $js = "<script>(function(){\n"
+            . self::get_cookie_js( $campaign )
+            . "  var wrap=document.currentScript.previousElementSibling;\n"
+            . "  var btn=wrap.querySelector('.knk-wa-btn');\n"
             . "  if(!btn)return;\n"
             . "  btn.addEventListener('click',function(e){\n"
             . "    e.preventDefault();\n"
-            . "    var href=btn.getAttribute('href');\n"
-            . "    // get/create cookie before redirect so server sees it\n"
-            . "    var vid=(document.cookie.match('(?:^|;)\\\\s*konektor_vid=([^;]*)')||[])[1]||'';\n"
-            . "    if(!vid){var ch='0123456789abcdef',v='';for(var i=0;i<32;i++)v+=ch[Math.floor(Math.random()*16)];document.cookie='konektor_vid='+v+';path=/;max-age=31536000;SameSite=Lax';vid=v;}\n"
-            . "    // send _vid and _src so server records cookie + source URL even cross-domain\n"
-            . "    var dest=href+(href.indexOf('?')>=0?'&':'?')+'_vid='+encodeURIComponent(vid)+'&_src='+encodeURIComponent(window.location.href);\n"
-            . "    window.location.href=dest;\n"
+            . "    var vid=_knkVid(),href=btn.getAttribute('href');\n"
+            . "    window.location.href=href+(href.indexOf('?')>=0?'&':'?')+'_vid='+encodeURIComponent(vid)+'&_src='+encodeURIComponent(window.location.href);\n"
             . "  });\n"
-            . "})()\n"
-            . "</script>\n";
+            . "})()</script>\n";
 
-        return "<!-- Konektor WA Link: {$camp_name} -->\n"
-             . $pixel_html
-             . $css
-             . $cookie_js
-             . "<div class=\"knk-wa-wrap\">\n"
+        $google_html = Konektor_Google::get_script( $campaign, 'page_load' );
+        $pixel_ping  = self::get_pixel_ping( $campaign );
+
+        $header = $store ? "<p class=\"knk-wa-store\">{$store}</p>\n" : '';
+
+        return "<!-- Konektor Link: {$camp_name} -->\n"
+             . $google_html . $pixel_ping . $css
+             . "<div class=\"knk-wa\">\n"
              . $header
-             . "  <a href=\"" . esc_url( $url ) . "\" class=\"knk-wa-btn\">\n"
-             . "    {$wa_icon}\n"
-             . "    Hubungi via WhatsApp\n"
-             . "  </a>\n"
+             . "  <a href=\"{$url_esc}\" class=\"knk-wa-btn\">{$wa_icon} {$btn_lbl}</a>\n"
              . "</div>\n"
-             . $click_js
-             . "<!-- End Konektor WA Link -->";
+             . $js
+             . "<!-- End Konektor Link -->";
     }
 
     public static function get_embed_code( $campaign ) {
         $cfg        = self::get_form_config( $campaign );
-        $submit_url = self::get_submit_url( $campaign );
+        $submit_url = esc_url( self::get_submit_url( $campaign ) );
         $tpl        = $cfg['template'] ?? 'modern';
-
-        $pixel_html = Konektor_Meta::get_pixel_script( $campaign, 'page_load' )
-                    . Konektor_Google::get_script( $campaign, 'page_load' )
-                    . Konektor_Tiktok::get_script( $campaign, 'page_load' )
-                    . Konektor_Snack::get_script( $campaign );
         $fields     = array_merge( $cfg['fields'] ?? [], $cfg['extra_fields'] ?? [] );
         $btn_label  = esc_html( $cfg['submit_label'] ?? 'Kirim Sekarang' );
 
@@ -229,36 +235,34 @@ class Konektor_Campaign {
         [ $bg, $accent, $text, $border, $btn_text ] = $schemes[ $tpl ] ?? $schemes['modern'];
         $inp_bg = $tpl === 'gradient' ? 'rgba(255,255,255,.1)' : '#fff';
 
-        // Apply custom_style overrides
-        $cs = $cfg['custom_style'] ?? [];
-        $bg        = $cs['color_bg']       ?: $bg;
-        $accent    = $cs['color_accent']   ?: $accent;
-        $text      = $cs['color_text']     ?: $text;
-        $border    = $cs['color_border']   ?: $border;
-        $btn_text  = $cs['color_btn_text'] ?: $btn_text;
-        $max_w     = $cs['max_width']      ?: '480px';
-        $radius    = $cs['border_radius']  ?: '12px';
-        $padding   = $cs['padding']        ?: '28px 24px';
-        $fsize     = $cs['font_size']      ?: '14px';
-        $btn_fsize = $cs['btn_font_size']  ?: '15px';
+        $cs        = $cfg['custom_style'] ?? [];
+        $bg        = $cs['color_bg']      ?: $bg;
+        $accent    = $cs['color_accent']  ?: $accent;
+        $text      = $cs['color_text']    ?: $text;
+        $border    = $cs['color_border']  ?: $border;
+        $btn_text  = $cs['color_btn_text']?: $btn_text;
+        $max_w     = $cs['max_width']     ?: '480px';
+        $radius    = $cs['border_radius'] ?: '12px';
+        $padding   = $cs['padding']       ?: '28px 24px';
+        $fsize     = $cs['font_size']     ?: '14px';
+        $btn_fsize = $cs['btn_font_size'] ?: '15px';
 
-        // CSS block
-        $css = "<style>\n"
-             . ".knk-form{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:{$max_w};margin:0 auto;padding:{$padding};background:{$bg};border-radius:{$radius};box-shadow:0 2px 12px rgba(0,0,0,.08);color:{$text};box-sizing:border-box}\n"
-             . ".knk-form *{box-sizing:border-box}\n"
-             . ".knk-form-header{margin-bottom:18px;text-align:center}\n"
-             . ".knk-form-store{margin:0;font-size:12px;opacity:.7}\n"
-             . ".knk-form-product{margin:6px 0 0;font-size:20px;font-weight:800}\n"
-             . ".knk-form-field{margin-bottom:14px}\n"
-             . ".knk-form-label{display:block;font-size:12px;font-weight:600;margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px;color:{$text};opacity:.8}\n"
-             . ".knk-form-req{color:#ef4444}\n"
-             . ".knk-form-input,.knk-form-textarea,.knk-form-select{width:100%;padding:10px 12px;font-size:{$fsize};border:1.5px solid {$border};border-radius:7px;background:{$inp_bg};color:{$text};outline:none;font-family:inherit}\n"
-             . ".knk-form-textarea{resize:vertical;min-height:80px}\n"
-             . ".knk-form-btn{width:100%;padding:13px;font-size:{$btn_fsize};font-weight:700;cursor:pointer;border:none;border-radius:8px;background:{$accent};color:{$btn_text};font-family:inherit;margin-top:4px}\n"
-             . ".knk-form-btn:hover{opacity:.92}\n"
+        $css = "<style>"
+             . ".knk-form{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:{$max_w};margin:0 auto;padding:{$padding};background:{$bg};border-radius:{$radius};box-shadow:0 2px 16px rgba(0,0,0,.1);color:{$text};box-sizing:border-box}"
+             . ".knk-form *{box-sizing:border-box}"
+             . ".knk-form-field{margin-bottom:16px}"
+             . ".knk-form-label{display:block;font-size:14px;font-weight:600;margin-bottom:6px;color:{$text}}"
+             . ".knk-form-req{color:#ef4444;margin-left:2px}"
+             . ".knk-form-input,.knk-form-textarea,.knk-form-select{width:100%;padding:12px 14px;font-size:{$fsize};border:1.5px solid {$border};border-radius:8px;background:{$inp_bg};color:{$text};outline:none;font-family:inherit;transition:border-color .15s}"
+             . ".knk-form-input:focus,.knk-form-textarea:focus,.knk-form-select:focus{border-color:{$accent}}"
+             . ".knk-form-textarea{resize:vertical;min-height:80px}"
+             . ".knk-form-btn{width:100%;padding:15px;font-size:{$btn_fsize};font-weight:700;cursor:pointer;border:none;border-radius:8px;background:{$accent};color:{$btn_text};font-family:inherit;margin-top:4px;transition:opacity .15s}"
+             . ".knk-form-btn:hover:not(:disabled){opacity:.88}"
+             . ".knk-form-btn:disabled{opacity:.45;cursor:not-allowed}"
+             . ".knk-form-err{display:none;padding:10px 14px;border-radius:7px;margin-bottom:12px;font-size:13px;font-weight:600;background:#fee2e2;color:#b91c1c}"
+             . ".knk-form-err.show{display:block}"
              . "</style>\n";
 
-        // Form fields HTML
         $fh = '';
         foreach ( $fields as $f ) {
             if ( empty( $f['enabled'] ) ) continue;
@@ -269,37 +273,106 @@ class Konektor_Campaign {
             $req  = ! empty( $f['required'] );
             $ra   = $req ? ' required' : '';
             $rl   = $req ? ' <span class="knk-form-req">*</span>' : '';
-            $fh  .= "  <div class=\"knk-form-field\">\n";
-            $fh  .= "    <label class=\"knk-form-label\">{$lbl}{$rl}</label>\n";
+            $fh  .= "<div class=\"knk-form-field\"><label class=\"knk-form-label\">{$lbl}{$rl}</label>";
             if ( $type === 'textarea' ) {
-                $fh .= "    <textarea name=\"{$name}\" rows=\"3\" placeholder=\"{$ph}\" class=\"knk-form-textarea\"{$ra}></textarea>\n";
+                $fh .= "<textarea name=\"{$name}\" rows=\"3\" placeholder=\"{$ph}\" class=\"knk-form-textarea\"{$ra}></textarea>";
             } elseif ( $type === 'select' && ! empty( $f['options'] ) ) {
-                $fh .= "    <select name=\"{$name}\" class=\"knk-form-select\"{$ra}>\n";
-                $fh .= "      <option value=\"\">-- Pilih --</option>\n";
+                $fh .= "<select name=\"{$name}\" class=\"knk-form-select\"{$ra}><option value=\"\">-- Pilih --</option>";
                 foreach ( (array) $f['options'] as $opt ) {
-                    $fh .= '      <option value="' . esc_attr( $opt ) . '">' . esc_html( $opt ) . "</option>\n";
+                    $fh .= '<option value="' . esc_attr( $opt ) . '">' . esc_html( $opt ) . '</option>';
                 }
-                $fh .= "    </select>\n";
+                $fh .= "</select>";
             } else {
-                $fh .= "    <input type=\"{$type}\" name=\"{$name}\" placeholder=\"{$ph}\" class=\"knk-form-input\"{$ra}>\n";
+                $extra = ( $name === 'phone' ) ? ' inputmode="numeric" autocomplete="tel"' : '';
+                $fh .= "<input type=\"{$type}\" name=\"{$name}\" placeholder=\"{$ph}\" class=\"knk-form-input\"{$ra}{$extra}>";
             }
-            $fh .= "  </div>\n";
+            $fh .= "</div>\n";
         }
 
         $header = '';
+        if ( $campaign->store_name ) {
+            $header .= '<p class="knk-form-label" style="text-align:center;margin-bottom:4px">' . esc_html( $campaign->store_name ) . '</p>';
+        }
+        if ( $campaign->product_name ) {
+            $header .= '<p style="text-align:center;font-size:18px;font-weight:800;margin-bottom:16px">' . esc_html( $campaign->product_name ) . '</p>';
+        }
+
+        $submit_url_js  = esc_js( self::get_submit_url( $campaign ) );
+        $meta_cfg_js    = Konektor_Meta::get_config( $campaign );
+        $tiktok_cfg_js  = Konektor_Tiktok::get_config( $campaign );
+        $google_cfg_js  = Konektor_Google::get_config( $campaign );
+
+        $js = "<script>(function(){\n"
+            . self::get_cookie_js( $campaign )
+            . "  var url='" . $submit_url_js . "';\n"
+            . "  var wrap=document.currentScript.previousElementSibling;\n"
+            . "  var form=wrap.querySelector('.knk-form');\n"
+            . "  var err=wrap.querySelector('.knk-form-err');\n"
+            . "  var btn=form?form.querySelector('.knk-form-btn'):null;\n"
+            . "  if(!form||!btn)return;\n"
+            // ── Format phone: hanya angka, strip non-digit, awalan 0 / 62
+            . "  var phoneEl=form.querySelector('input[name=phone]');\n"
+            . "  if(phoneEl){\n"
+            . "    phoneEl.addEventListener('input',function(){\n"
+            . "      var v=this.value.replace(/[^0-9]/g,'');\n"
+            . "      this.value=v;\n"
+            . "    });\n"
+            . "    phoneEl.addEventListener('blur',function(){\n"
+            . "      var v=this.value.replace(/[^0-9]/g,'');\n"
+            . "      if(v.startsWith('62'))v='0'+v.slice(2);\n"
+            . "      this.value=v;\n"
+            . "    });\n"
+            . "  }\n"
+            // ── Disable/enable tombol berdasarkan field required
+            . "  function checkReady(){\n"
+            . "    var ok=true;\n"
+            . "    form.querySelectorAll('[required]').forEach(function(el){if(!el.value.trim())ok=false;});\n"
+            . "    btn.disabled=!ok;\n"
+            . "  }\n"
+            . "  form.addEventListener('input',checkReady);\n"
+            . "  form.addEventListener('change',checkReady);\n"
+            . "  checkReady();\n"
+            // ── Submit via fetch JSON
+            . "  form.addEventListener('submit',function(e){\n"
+            . "    e.preventDefault();\n"
+            . "    btn.disabled=true;err.className='knk-form-err';\n"
+            . "    var data={_vid:_knkVid(),source_url:window.location.href};\n"
+            . "    new FormData(form).forEach(function(v,k){data[k]=v;});\n"
+            . "    fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(data)})\n"
+            . "    .then(function(r){return r.json();})\n"
+            . "    .then(function(res){\n"
+            . "      if(res.thanks_page_url){\n"
+            . "        if(!res.double){\n"
+            // Tembak pixel form_submit sebelum redirect — hanya untuk lead baru
+            . "          if(window.fbq)fbq('track'," . wp_json_encode( $meta_cfg_js['form_submit_event'] ?? 'Lead' ) . ");\n"
+            . "          if(window.ttq)ttq.track(" . wp_json_encode( $tiktok_cfg_js['form_submit_event'] ?? 'SubmitForm' ) . ");\n"
+            . "          if(window.gtag&&" . wp_json_encode( $google_cfg_js['conversion_id'] ?? '' ) . "){\n"
+            . "            gtag('event','conversion',{'send_to':'AW-" . esc_js( $google_cfg_js['conversion_id'] ?? '' ) . "/" . esc_js( $google_cfg_js['form_submit_label'] ?? '' ) . "'});\n"
+            . "          }\n"
+            . "        }\n"
+            . "        window.location.href=res.thanks_page_url;return;\n"
+            . "      }\n"
+            . "      err.textContent=res.message||'Terjadi kesalahan.';err.className='knk-form-err show';checkReady();\n"
+            . "    })\n"
+            . "    .catch(function(){err.textContent='Koneksi gagal, coba lagi.';err.className='knk-form-err show';checkReady();});\n"
+            . "  });\n"
+            . "})()</script>\n";
+
+        // Google Ads — satu-satunya yang tetap browser (industry standard: butuh gclid dari browser)
+        $google_html = Konektor_Google::get_script( $campaign, 'page_load' );
+
+        $pixel_ping = self::get_pixel_ping( $campaign );
 
         return "<!-- Konektor Form: " . esc_html( $campaign->name ) . " -->\n"
-             . $pixel_html
-             . $css
-             . self::get_cookie_script()
-             . "<form method=\"POST\" action=\"" . esc_url( $submit_url ) . "\" accept-charset=\"UTF-8\" class=\"knk-form\">\n"
-             . "  <input type=\"hidden\" name=\"_html_embed\" value=\"1\">\n"
-             . $header
-             . $fh
-             . "  <div class=\"knk-form-field\">\n"
-             . "    <button type=\"submit\" class=\"knk-form-btn\">{$btn_label}</button>\n"
-             . "  </div>\n"
-             . "</form>\n"
+             . $google_html . $pixel_ping . $css
+             . "<div class=\"knk-form-wrap\">\n"
+             . "  <div class=\"knk-form-err\"></div>\n"
+             . "  <form class=\"knk-form\" novalidate>\n"
+             . $header . $fh
+             . "    <div class=\"knk-form-field\"><button type=\"submit\" class=\"knk-form-btn\">{$btn_label}</button></div>\n"
+             . "  </form>\n"
+             . "</div>\n"
+             . $js
              . "<!-- End Konektor Form -->";
     }
 

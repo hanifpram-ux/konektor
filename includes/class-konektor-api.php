@@ -74,7 +74,7 @@ class Konektor_API {
         }
 
         // Block check
-        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked( $campaign_id ) ) {
+        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked() ) {
             $msg = $campaign->block_message ?: 'Akses Anda telah diblokir.';
             wp_send_json_error( [ 'message' => $msg, 'blocked' => true ], 403 );
         }
@@ -152,7 +152,7 @@ class Konektor_API {
         $campaign    = Konektor_Campaign::get( $campaign_id );
         if ( ! $campaign ) wp_send_json_error( [], 404 );
 
-        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked( $campaign_id ) ) {
+        if ( $campaign->block_enabled && Konektor_Blocker::is_blocked() ) {
             $msg = $campaign->block_message ?: 'Akses Anda telah diblokir.';
             wp_send_json_error( [ 'message' => $msg, 'blocked' => true ], 403 );
         }

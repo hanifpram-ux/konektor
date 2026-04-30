@@ -20,6 +20,8 @@ class Konektor_Admin {
         add_action( 'wp_ajax_konektor_admin_block_lead',      [ __CLASS__, 'ajax_block_lead' ] );
         add_action( 'wp_ajax_konektor_admin_delete_lead',     [ __CLASS__, 'ajax_delete_lead' ] );
         add_action( 'wp_ajax_konektor_admin_gen_token',       [ __CLASS__, 'ajax_gen_token' ] );
+        add_action( 'wp_ajax_konektor_admin_test_pixel',      [ __CLASS__, 'ajax_test_pixel' ] );
+        add_action( 'wp_ajax_konektor_admin_debug_campaign',   [ __CLASS__, 'ajax_debug_campaign' ] );
     }
 
     public static function register_menu() {
@@ -30,6 +32,7 @@ class Konektor_Admin {
         add_submenu_page( 'konektor', 'Leads',         'Leads',         'manage_options', 'konektor-leads',      [ __CLASS__, 'page_leads' ] );
         add_submenu_page( 'konektor', 'Analitik',      'Analitik',      'manage_options', 'konektor-analytics',  [ __CLASS__, 'page_analytics' ] );
         add_submenu_page( 'konektor', 'Pengaturan',    'Pengaturan',    'manage_options', 'konektor-settings',   [ __CLASS__, 'page_settings' ] );
+        add_submenu_page( 'konektor', 'Log API',        'Log API',       'manage_options', 'konektor-log',        [ __CLASS__, 'page_log' ] );
         add_submenu_page( 'konektor', 'Panduan',       'Panduan',       'manage_options', 'konektor-guide',      [ __CLASS__, 'page_guide' ] );
         add_submenu_page( 'konektor', 'Tentang',       'Tentang',       'manage_options', 'konektor-about',      [ __CLASS__, 'page_about' ] );
     }
@@ -130,6 +133,15 @@ class Konektor_Admin {
 
     public static function page_guide() {
         include KONEKTOR_PLUGIN_DIR . 'admin/views/guide.php';
+    }
+
+    public static function page_log() {
+        // Handle clear log action
+        if ( isset( $_POST['knk_clear_log'] ) && check_admin_referer( 'knk_clear_log' ) ) {
+            Konektor_Logger::clear();
+            echo '<div class="notice notice-success"><p>Log berhasil dihapus.</p></div>';
+        }
+        include KONEKTOR_PLUGIN_DIR . 'admin/views/log.php';
     }
 
     public static function page_about() {
@@ -278,6 +290,161 @@ class Konektor_Admin {
         $token = Konektor_Operator::generate_panel_token( $op_id );
         $base  = Konektor_Helper::get_setting( 'base_slug', 'konektor' );
         wp_send_json_success( [ 'url' => home_url( "/{$base}/cs-panel/?token={$token}" ) ] );
+    }
+
+    public static function ajax_test_pixel() {
+        self::verify_nonce();
+
+        $platform   = sanitize_text_field( $_POST['platform']   ?? '' );
+        $event_type = sanitize_text_field( $_POST['event_type'] ?? 'page_load' );
+
+        // pixel_config dikirim JS sudah lengkap termasuk test_event_code di dalamnya
+        $pixel_raw = wp_unslash( $_POST['pixel_config'] ?? '' );
+        $pixel_cfg = is_string( $pixel_raw ) ? ( json_decode( $pixel_raw, true ) ?: [] ) : [];
+
+        // Lead data dummy untuk test
+        $lead_data = [
+            'source_url' => home_url(),
+            'referrer'   => '',
+            'name'       => 'Test User',
+            'email'      => 'test@example.com',
+            'phone'      => '081234567890',
+        ];
+
+        $result  = null;
+        $log     = [];
+
+        if ( $platform === 'meta' ) {
+            // Ambil cfg SETELAH inject test_event_code
+            $cfg = $pixel_cfg['meta'] ?? [];
+            if ( empty( $cfg['pixel_id'] ) || empty( $cfg['token'] ) ) {
+                wp_send_json_error( [ 'message' => 'Pixel ID dan Access Token Meta wajib diisi.' ] );
+            }
+            $event_map = [
+                'page_load'   => $cfg['page_load_event']   ?? 'PageView',
+                'form_submit' => $cfg['form_submit_event'] ?? 'Lead',
+                'thanks_page' => $cfg['thanks_page_event'] ?? 'Purchase',
+            ];
+            $event_name = ! empty( $_POST['event_name_override'] )
+                ? sanitize_text_field( $_POST['event_name_override'] )
+                : ( $event_map[ $event_type ] ?? 'PageView' );
+            $result = Konektor_Meta::send_capi_event( $event_name, $lead_data, $cfg );
+            $log['event'] = $event_name;
+
+        } elseif ( $platform === 'tiktok' ) {
+            $cfg = $pixel_cfg['tiktok'] ?? [];
+            if ( empty( $cfg['pixel_id'] ) || empty( $cfg['access_token'] ) ) {
+                wp_send_json_error( [ 'message' => 'Pixel ID dan Access Token TikTok wajib diisi.' ] );
+            }
+            $result = Konektor_Tiktok::send_event( $event_type, $lead_data, $cfg );
+            $log['event'] = Konektor_Tiktok::get_event_name( $cfg, $event_type );
+
+        } elseif ( $platform === 'snack' ) {
+            $cfg = $pixel_cfg['snack'] ?? [];
+            if ( empty( $cfg['pixel_id'] ) || empty( $cfg['access_token'] ) ) {
+                wp_send_json_error( [ 'message' => 'Pixel ID dan Access Token Snack wajib diisi.' ] );
+            }
+            $event_name = Konektor_Snack::get_event_name( $cfg, $event_type );
+            $result = Konektor_Snack::send_event( $event_name, $lead_data, $cfg );
+            $log['event'] = $event_name;
+
+        } else {
+            wp_send_json_error( [ 'message' => 'Platform tidak dikenal.' ] );
+        }
+
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( [
+                'message' => 'Koneksi gagal: ' . $result->get_error_message(),
+                'log'     => $log,
+            ] );
+        }
+
+        $code = wp_remote_retrieve_response_code( $result );
+        $body = wp_remote_retrieve_body( $result );
+        $ok   = ( $code >= 200 && $code < 300 );
+
+        wp_send_json_success( [
+            'ok'      => $ok,
+            'code'    => $code,
+            'body'    => $body,
+            'event'   => $log['event'] ?? '',
+            'message' => $ok ? 'Event berhasil dikirim! Cek di Test Events panel platform.' : 'Server menolak request.',
+        ] );
+    }
+
+    public static function ajax_debug_campaign() {
+        self::verify_nonce();
+        $id       = (int) ( $_POST['campaign_id'] ?? 0 );
+        $campaign = Konektor_Campaign::get( $id );
+        if ( ! $campaign ) {
+            wp_send_json_error( [ 'message' => 'Kampanye tidak ditemukan.' ] );
+        }
+
+        $pixel_raw = $campaign->pixel_config;
+        $pixel     = $pixel_raw ? json_decode( $pixel_raw, true ) : [];
+
+        $meta_cfg   = $pixel['meta']   ?? [];
+        $tiktok_cfg = $pixel['tiktok'] ?? [];
+        $snack_cfg  = $pixel['snack']  ?? [];
+
+        // Sensor token — tampilkan 8 karakter pertama saja
+        $mask = function( $v ) {
+            if ( ! $v ) return '(KOSONG — inilah mengapa CAPI tidak dipanggil!)';
+            return substr( $v, 0, 8 ) . str_repeat( '*', max( 0, strlen( $v ) - 8 ) );
+        };
+
+        // Coba fire CAPI test langsung dari kampanye jika test_event_code diisi di POST
+        $test_code = sanitize_text_field( $_POST['test_event_code'] ?? '' );
+        $capi_test_result = null;
+        if ( $test_code && ! empty( $meta_cfg['token'] ) && ! empty( $meta_cfg['pixel_id'] ) ) {
+            $cfg_with_test = $meta_cfg;
+            $cfg_with_test['test_event_code'] = $test_code;
+            $event_name = $meta_cfg['form_submit_event'] ?? 'Lead';
+            $lead_data  = [
+                'source_url' => home_url( '/konektor/' . $campaign->slug . '/' ),
+                'name'       => 'Test Admin',
+                'email'      => 'test@example.com',
+                'phone'      => '081234567890',
+            ];
+            $resp = Konektor_Meta::send_capi_event( $event_name, $lead_data, $cfg_with_test );
+            if ( is_wp_error( $resp ) ) {
+                $capi_test_result = [ 'error' => $resp->get_error_message() ];
+            } else {
+                $capi_test_result = [
+                    'http_code' => wp_remote_retrieve_response_code( $resp ),
+                    'body'      => json_decode( wp_remote_retrieve_body( $resp ), true ),
+                    'event'     => $event_name,
+                ];
+            }
+        }
+
+        wp_send_json_success( [
+            'kampanye'    => $campaign->name,
+            'slug'        => $campaign->slug,
+            'url_form'    => home_url( '/' . Konektor_Helper::get_setting( 'base_slug', 'konektor' ) . '/' . $campaign->slug . '/' ),
+            'status'      => $campaign->status,
+            'double_lead' => (bool) $campaign->double_lead_enabled,
+            'meta' => [
+                'pixel_id'          => $meta_cfg['pixel_id']          ?? '(KOSONG)',
+                'token'             => $mask( $meta_cfg['token']             ?? '' ),
+                'test_event_code'   => $meta_cfg['test_event_code']   ?? '(kosong)',
+                'page_load_event'   => $meta_cfg['page_load_event']   ?? '(tidak diset → default PageView)',
+                'form_submit_event' => $meta_cfg['form_submit_event']  ?? '(tidak diset → default Lead)',
+                'thanks_page_event' => $meta_cfg['thanks_page_event']  ?? '(tidak diset → default Purchase)',
+                'CAPI_akan_dipanggil' => ( ! empty( $meta_cfg['token'] ) && ! empty( $meta_cfg['pixel_id'] ) ) ? 'YA' : 'TIDAK — token atau pixel_id kosong!',
+            ],
+            'tiktok' => [
+                'pixel_id'          => $tiktok_cfg['pixel_id']         ?? '(KOSONG)',
+                'access_token'      => $mask( $tiktok_cfg['access_token'] ?? '' ),
+                'API_akan_dipanggil'=> ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) ? 'YA' : 'TIDAK — pixel_id atau access_token kosong!',
+            ],
+            'snack' => [
+                'pixel_id'          => $snack_cfg['pixel_id']     ?? '(KOSONG)',
+                'access_token'      => $mask( $snack_cfg['access_token'] ?? '' ),
+                'API_akan_dipanggil'=> ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) ? 'YA' : 'TIDAK',
+            ],
+            'capi_test_result' => $capi_test_result ?? '(isi test_event_code di form untuk fire test langsung)',
+        ] );
     }
 
     /* ────────────────────────────────────────
@@ -676,7 +843,7 @@ $(document).on('submit','#konektor-campaign-form',function(e){
 
 function buildCampaignPayload($form,id){
   var p={action:'konektor_admin_save_campaign',nonce:nonce,id:id};
-  var pixelMeta={},pixelGoogle={},pixelTiktok={},pixelSnack={};
+  var pixelMeta={},pixelGoogle={},pixelTiktok={},pixelSnack={test_mode:'0'};
   var formCfgOther={};
 
   $form.serializeArray().forEach(function(item){
@@ -743,9 +910,6 @@ function buildCampaignPayload($form,id){
   }
   p.operators=JSON.stringify(ops);
 
-  // snack html field — explicitly read textarea to preserve multiline JS content
-  var snackHtml=$form.find('textarea[name="pixel_config[snack][html]"]').val()||'';
-  pixelSnack.html=snackHtml;
   p.pixel_config=JSON.stringify({meta:pixelMeta,google:pixelGoogle,tiktok:pixelTiktok,snack:pixelSnack});
 
   // allowed_domains from textarea
@@ -1051,6 +1215,117 @@ function updateOpEmpty(){
   }
 }
 
+
+/* ── DEBUG CONFIG KAMPANYE ── */
+$(document).on('click','#dbg-check-btn',function(){
+  var id=$('#dbg-campaign-id').val();
+  var testCode=$('#dbg-test-code').val().trim();
+  if(!id){alert('Pilih kampanye dulu.');return;}
+  var $pre=$('#dbg-result');
+  $pre.show().text('Memuat...');
+  $.post(ajaxUrl,{
+    action:'konektor_admin_debug_campaign',
+    nonce:nonce,
+    campaign_id:id,
+    test_event_code:testCode
+  },function(r){
+    if(r.success){
+      $pre.text(JSON.stringify(r.data,null,2));
+    } else {
+      $pre.text('Error: '+(r.data&&r.data.message?r.data.message:'Gagal'));
+    }
+  },'json');
+});
+
+/* ── TEST PERISTIWA API ── */
+$(document).on('change','#tp-platform',function(){
+  var v=$(this).val();
+  $('#tp-fields-meta,#tp-fields-tiktok,#tp-fields-snack').hide();
+  $('#tp-fields-'+v).show();
+  $('#tp-result').hide();
+  $('#tp-status').text('');
+});
+
+$(document).on('click','#tp-send-btn',function(){
+  var platform=$('#tp-platform').val();
+  var eventType=$('#tp-event-type').val();
+  var $btn=$(this);
+  var $status=$('#tp-status');
+  var $result=$('#tp-result');
+
+  // Bangun pixel_config sesuai platform
+  var pixelCfg={};
+  if(platform==='meta'){
+    var pixId=$('#tp-meta-pixel-id').val().trim();
+    var token=$('#tp-meta-token').val().trim();
+    var testCode=$('#tp-meta-test-code').val().trim();
+    var evOverride=$('#tp-meta-event-override').val().trim();
+    if(!pixId||!token){$status.text('Pixel ID dan Access Token wajib diisi.').css('color','var(--err)');return;}
+    var metaCfg={pixel_id:pixId,token:token};
+    if(testCode)metaCfg.test_event_code=testCode;
+    if(evOverride){
+      metaCfg.page_load_event=evOverride;
+      metaCfg.form_submit_event=evOverride;
+      metaCfg.thanks_page_event=evOverride;
+    }
+    pixelCfg={meta:metaCfg};
+  } else if(platform==='tiktok'){
+    var pixId=$('#tp-tiktok-pixel-id').val().trim();
+    var token=$('#tp-tiktok-token').val().trim();
+    var testCode=$('#tp-tiktok-test-code').val().trim();
+    if(!pixId||!token){$status.text('Pixel ID dan Access Token wajib diisi.').css('color','var(--err)');return;}
+    var ttCfg={pixel_id:pixId,access_token:token};
+    if(testCode)ttCfg.test_event_code=testCode;
+    pixelCfg={tiktok:ttCfg};
+  } else if(platform==='snack'){
+    var pixId=$('#tp-snack-pixel-id').val().trim();
+    var token=$('#tp-snack-token').val().trim();
+    if(!pixId||!token){$status.text('Pixel ID dan Access Token wajib diisi.').css('color','var(--err)');return;}
+    pixelCfg={snack:{pixel_id:pixId,access_token:token}};
+  }
+
+  $btn.prop('disabled',true).html('<i class="fa-solid fa-spinner fa-spin"></i> Mengirim...');
+  $status.text('').css('color','');
+  $result.hide();
+
+  $.ajax({
+    url:ajaxUrl,
+    type:'POST',
+    data:{
+      action:'konektor_admin_test_pixel',
+      nonce:nonce,
+      platform:platform,
+      event_type:eventType,
+      pixel_config:JSON.stringify(pixelCfg)
+    },
+    dataType:'json',
+    success:function(res){
+      $btn.prop('disabled',false).html('<i class="fa-solid fa-paper-plane"></i> Kirim Test Event');
+      $result.show();
+      if(res.success){
+        var d=res.data;
+        var isOk=d.ok;
+        var bodyFmt=d.body;
+        try{bodyFmt=JSON.stringify(JSON.parse(d.body),null,2);}catch(e){}
+        $('#tp-result-banner')
+          .text((isOk?'✓ Berhasil — ':'✗ Gagal — ')+(d.message||''))
+          .css({'background':isOk?'var(--ok-lt)':'var(--err-lt)','color':isOk?'#166534':'#991b1b'});
+        $('#tp-result-body').text('HTTP '+d.code+'\n\nEvent: '+d.event+'\n\n'+bodyFmt);
+        $status.text(isOk?'Event terkirim!':'Server menolak.').css('color',isOk?'var(--ok)':'var(--err)');
+      } else {
+        $('#tp-result-banner')
+          .text('✗ Error — '+(res.data&&res.data.message?res.data.message:'Gagal'))
+          .css({'background':'var(--err-lt)','color':'#991b1b'});
+        $('#tp-result-body').text(JSON.stringify(res.data,null,2));
+        $status.text('Gagal').css('color','var(--err)');
+      }
+    },
+    error:function(x){
+      $btn.prop('disabled',false).html('<i class="fa-solid fa-paper-plane"></i> Kirim Test Event');
+      $status.text('Error koneksi: HTTP '+x.status).css('color','var(--err)');
+    }
+  });
+});
 
 /* helper */
 function esc(s){var d=document.createElement('div');d.appendChild(document.createTextNode(s||''));return d.innerHTML;}

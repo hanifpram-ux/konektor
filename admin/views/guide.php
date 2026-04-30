@@ -13,7 +13,7 @@ $sections = [
     'steps' => [
       ['Buka <strong>Pengaturan</strong> → isi <em>Base Slug</em> (cth: <code>lp</code>) dan simpan.', null],
       ['Buka <strong>Operator / CS</strong> → klik <em>Tambah Operator</em> → isi nama, tipe (WhatsApp/Email/dll), dan kontak/nomor HP.', null],
-      ['Buka <strong>Kampanye</strong> → klik <em>Kampanye Baru</em> → pilih tipe <em>Form</em> atau <em>WA Link</em>.', null],
+      ['Buka <strong>Kampanye</strong> → klik <em>Kampanye Baru</em> → pilih tipe <em>Form</em> atau <em>Link</em>.', null],
       ['Assign operator ke kampanye, atur bobot jika perlu.', null],
       ['Salin URL kampanye atau kode embed HTML, tempel ke landing page Anda.', null],
       ['Lead masuk akan muncul di <strong>Manajemen Lead</strong> dan notifikasi dikirim via Telegram jika sudah dikonfigurasi.', null],
@@ -24,7 +24,7 @@ $sections = [
     'title' => 'Tipe Kampanye',
     'items' => [
       ['Form', 'Menampilkan form isian (nama, HP, email, dll). Cocok untuk landing page yang butuh data customer. Bisa disematkan via embed code atau diakses langsung via URL.'],
-      ['WA Link', 'Redirect langsung ke WhatsApp CS. Klik direkam otomatis beserta IP dan cookie. Cocok untuk tombol "Chat WA" di landing page.'],
+      ['Link', 'Redirect langsung ke WhatsApp CS. Klik direkam otomatis beserta IP dan cookie. Cocok untuk tombol "Chat WA" di landing page.'],
     ],
     'note' => 'URL kampanye: <code>https://situsanda.com/{base-slug}/{slug-kampanye}</code>',
   ],
@@ -35,7 +35,7 @@ $sections = [
       ['Buka kampanye → salin <strong>Kode Embed HTML</strong> dari banner di atas halaman edit.', null],
       ['Tempel kode tersebut ke halaman HTML landing page Anda, di dalam <code>&lt;body&gt;</code>.', null],
       ['Form akan muncul dan submit langsung ke server Konektor. Cookie VID otomatis diset oleh JS embed untuk tracking.', null],
-      ['Untuk WA Link, tombol sudah siap pakai — klik dicegat JS, cookie dan source URL direkam sebelum redirect.', null],
+      ['Untuk Link, tombol sudah siap pakai — klik dicegat JS, cookie dan source URL direkam sebelum redirect.', null],
     ],
   ],
   [
@@ -66,7 +66,7 @@ $sections = [
       ['Buat bot di Telegram via <strong>@BotFather</strong> → <code>/newbot</code> → salin token.', null],
       ['Masukkan token di <strong>Pengaturan → Token Telegram Bot</strong>.', null],
       ['Setiap operator isi <em>Telegram Chat ID</em> di halaman edit operator. Cara dapat Chat ID: chat dengan <strong>@userinfobot</strong>.', null],
-      ['Notifikasi otomatis terkirim saat ada lead baru. Untuk WA Link, notif menampilkan IP dan sumber klik.', null],
+      ['Notifikasi otomatis terkirim saat ada lead baru. Untuk Link, notif menampilkan IP dan sumber klik.', null],
       ['Perintah bot yang tersedia:', [
         '<code>/leads</code> — lihat 5 lead terbaru',
         '<code>/status {id} {new|contacted|purchased|cancelled}</code> — update status lead',
@@ -78,7 +78,7 @@ $sections = [
     'icon'  => 'fa-message',
     'title' => 'Pesan Follow-Up ke Customer',
     'steps' => [
-      ['Khusus kampanye <strong>Form</strong> (tidak tersedia untuk WA Link).', null],
+      ['Khusus kampanye <strong>Form</strong> (tidak tersedia untuk Link).', null],
       ['Isi <em>Pesan Follow-Up ke Customer</em> di halaman edit kampanye.', null],
       ['Shortcode yang tersedia: <code>[cname]</code> <code>[cphone]</code> <code>[cemail]</code> <code>[caddress]</code> <code>[catatan]</code> <code>[product]</code> <code>[quantity]</code> <code>[oname]</code>', null],
       ['Tombol <em>Follow-Up</em> muncul di Panel CS per lead. Klik akan membuka WA ke nomor customer dengan pesan yang sudah diisi shortcode.', null],

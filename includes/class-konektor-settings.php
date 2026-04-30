@@ -19,9 +19,8 @@ class Konektor_Settings {
             'allowed_domains_global',
             'cs_panel_slug',
             'encrypt_lead_data',
-            'tiktok_pixel_id',
-            'snack_video_pixel_id',
             'base_slug',
+            'debug_log',
         ];
         $json_keys = [ 'allowed_domains_global' ];
         foreach ( $allowed as $key ) {
