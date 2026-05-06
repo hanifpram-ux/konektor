@@ -28,15 +28,6 @@
 
 ---
 
-## 📸 Screenshots
-
-> *Add screenshots to `plugin-wordpress/assets/screenshot-*.png` and update the links below.*
-
-| Admin Dashboard | Campaign Editor | Test Pixel Panel |
-|-----------------|-----------------|------------------|
-| ![Dashboard](assets/screenshot-1.png) | ![Editor](assets/screenshot-2.png) | ![Test](assets/screenshot-3.png) |
-
----
 
 ## 🚀 Installation
 
