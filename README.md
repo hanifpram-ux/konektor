@@ -131,7 +131,7 @@ plugin-wordpress/
 
 ## 🙏 Credit
 
-**Dibuat Oleh [Hanif Pramono](https://hanifprm.my.id)**  
+**[Hanif Pramono](https://hanifprm.my.id)**  
 🔗 [https://hanifprm.my.id](https://hanifprm.my.id)
 
 ---
