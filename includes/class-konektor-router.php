@@ -175,7 +175,7 @@ class Konektor_Router {
             'phone'       => '',
             'address'     => '',
             'source_url'  => esc_url_raw( sanitize_text_field( $_GET['_src'] ?? '' ) ?: ( $_SERVER['HTTP_REFERER'] ?? '' ) ),
-            'referrer'    => esc_url_raw( $_SERVER['HTTP_REFERER'] ?? '' ),
+            'referrer'    => esc_url_raw( sanitize_text_field( $_GET['_ref'] ?? '' ) ?: ( $_SERVER['HTTP_REFERER'] ?? '' ) ),
             '_vid'        => $vid,
         ];
         $lead_id = Konektor_Lead::create( $lead_data );

@@ -73,7 +73,9 @@ class Konektor_Shortcode {
         $label         = esc_html( $atts['label'] );
         $url           = esc_url( Konektor_Campaign::get_url( $campaign ) );
 
-        return $pixel_scripts . "<div class='konektor-wa-wrap'><a href='{$url}' class='{$btn_class}'>{$label}</a></div>";
+        $data_url = esc_attr( Konektor_Campaign::get_url( $campaign ) );
+        return $pixel_scripts . "<div class='konektor-wa-wrap'><a href='{$url}' class='{$btn_class}' data-knk-url='{$data_url}' onclick='return knkLinkClick(this)'>{$label}</a></div>"
+            . "<script>function knkLinkClick(a){try{var u=new URL(a.getAttribute('data-knk-url'));u.searchParams.set('_src',window.location.href);u.searchParams.set('_ref',document.referrer||'');a.href=u.toString();}catch(e){}return true;}</script>";
     }
 
     public static function collect_pixel_scripts( $campaign, $event_type ) {

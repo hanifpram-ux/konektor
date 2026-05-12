@@ -126,8 +126,8 @@ $vid = isset( $_COOKIE['konektor_vid'] ) ? sanitize_text_field( $_COOKIE['konekt
 
     <form action="<?php echo esc_url( $submit_url ); ?>" method="POST" id="knk-form">
       <input type="hidden" name="_vid" id="knk-vid" value="<?php echo esc_attr( $vid ); ?>">
-      <input type="hidden" name="source_url" value="<?php echo esc_url( home_url( $_SERVER['REQUEST_URI'] ) ); ?>">
-      <input type="hidden" name="referrer" value="<?php echo esc_url( $_SERVER['HTTP_REFERER'] ?? '' ); ?>">
+      <input type="hidden" name="source_url" id="knk-source-url" value="<?php echo esc_url( home_url( $_SERVER['REQUEST_URI'] ) ); ?>">
+      <input type="hidden" name="referrer" id="knk-referrer" value="<?php echo esc_url( $_SERVER['HTTP_REFERER'] ?? '' ); ?>">
       <?php
       $click_id = sanitize_text_field( $_GET['click_id'] ?? ( $_GET['clickid'] ?? '' ) );
       if ( $click_id ) :
@@ -214,6 +214,7 @@ $vid = isset( $_COOKIE['konektor_vid'] ) ? sanitize_text_field( $_COOKIE['konekt
     var data = {};
     new FormData(form).forEach(function(v, k) { data[k] = v; });
     data.source_url = window.location.href;
+    data.referrer   = document.referrer || '';
     data._vid = vid;
 
     fetch(form.action, {
@@ -249,6 +250,13 @@ $vid = isset( $_COOKIE['konektor_vid'] ) ? sanitize_text_field( $_COOKIE['konekt
       btnLoad.classList.add('knk-hidden');
     });
   });
+})();
+// Override hidden inputs with actual page URL (important for embed/cross-domain)
+(function() {
+  var su = document.getElementById('knk-source-url');
+  var rf = document.getElementById('knk-referrer');
+  if (su) su.value = window.location.href;
+  if (rf && !rf.value && document.referrer) rf.value = document.referrer;
 })();
 </script>
 </body>
