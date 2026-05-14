@@ -45,12 +45,99 @@ class Konektor_Lead {
         return sanitize_text_field( $vid );
     }
 
-    // Tidak dipakai di flow utama (router pakai transient), dipertahankan untuk API
-    public static function check_double( $campaign_id, $phone, $email, $vid_from_body = '' ) {
+    /**
+     * Build scope WHERE clause for double-lead detection.
+     * Scope controlled by konektor setting 'double_lead_scope':
+     *   'campaign' — per campaign_id (default)
+     *   'domain'   — all campaigns from the same source domain
+     *   'page'     — all campaigns from the exact same source URL
+     *
+     * Returns ['where' => string, 'params' => array]
+     */
+    private static function double_scope_where( $campaign_id, $source_url = '' ) {
+        $scope = Konektor_Helper::get_setting( 'double_lead_scope', 'campaign' );
+
+        if ( $scope === 'page' && $source_url ) {
+            return [
+                'where'  => 'source_url = %s',
+                'params' => [ substr( $source_url, 0, 2000 ) ],
+            ];
+        }
+        if ( $scope === 'domain' && $source_url ) {
+            $host = parse_url( $source_url, PHP_URL_HOST );
+            if ( $host ) {
+                return [
+                    'where'  => '(source_url LIKE %s OR source_url LIKE %s)',
+                    'params' => [ 'http://' . $host . '%', 'https://' . $host . '%' ],
+                ];
+            }
+        }
+        // Default: per campaign
+        return [
+            'where'  => 'campaign_id = %d',
+            'params' => [ (int) $campaign_id ],
+        ];
+    }
+
+    /**
+     * Check duplicate for form leads: fingerprint → cookie → IP.
+     */
+    public static function check_double( $campaign_id, $phone, $email, $vid_from_body = '', $source_url = '' ) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'konektor_leads';
+        $ip    = Konektor_Helper::get_client_ip();
+        $vid   = self::resolve_vid( $vid_from_body );
+        $sw    = self::double_scope_where( $campaign_id, $source_url );
+
+        // 1. Fingerprint (phone+email)
+        if ( $phone !== '' || $email !== '' ) {
+            $fp = Konektor_Crypto::fingerprint(
+                Konektor_Helper::sanitize_phone( $phone ),
+                sanitize_email( $email )
+            );
+            if ( $fp && $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM $table WHERE {$sw['where']} AND fingerprint = %s AND is_double = 0 LIMIT 1",
+                ...array_merge( $sw['params'], [ $fp ] )
+            ) ) ) return true;
+        }
+
+        // 2. Cookie / VID
+        if ( $vid && $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM $table WHERE {$sw['where']} AND cookie_id = %s AND is_double = 0 LIMIT 1",
+            ...array_merge( $sw['params'], [ $vid ] )
+        ) ) ) return true;
+
+        // 3. IP address
+        if ( $ip && $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM $table WHERE {$sw['where']} AND ip_address = %s AND is_double = 0 LIMIT 1",
+            ...array_merge( $sw['params'], [ $ip ] )
+        ) ) ) return true;
+
         return false;
     }
 
-    public static function check_double_wa( $campaign_id, $vid_from_qs = '' ) {
+    /**
+     * Check duplicate for wa_link leads: cookie → IP.
+     */
+    public static function check_double_wa( $campaign_id, $vid_from_qs = '', $source_url = '' ) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'konektor_leads';
+        $vid   = self::resolve_vid( $vid_from_qs );
+        $ip    = Konektor_Helper::get_client_ip();
+        $sw    = self::double_scope_where( $campaign_id, $source_url );
+
+        // 1. Cookie / VID
+        if ( $vid && $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM $table WHERE {$sw['where']} AND cookie_id = %s AND is_double = 0 LIMIT 1",
+            ...array_merge( $sw['params'], [ $vid ] )
+        ) ) ) return true;
+
+        // 2. IP address
+        if ( $ip && $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM $table WHERE {$sw['where']} AND ip_address = %s AND is_double = 0 LIMIT 1",
+            ...array_merge( $sw['params'], [ $ip ] )
+        ) ) ) return true;
+
         return false;
     }
 

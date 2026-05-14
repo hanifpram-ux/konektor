@@ -149,6 +149,11 @@ class Konektor_Router {
         if ( ! Konektor_Helper::is_domain_allowed( $campaign ) ) {
             wp_die( 'Domain tidak diizinkan.', 403 );
         }
+        // Block bots — must not create leads or fire pixels
+        if ( Konektor_Helper::is_bot_request() ) {
+            status_header( 204 );
+            exit;
+        }
         if ( Konektor_Blocker::is_blocked() ) {
             self::render_blocked_page( $campaign );
             exit;
@@ -158,8 +163,9 @@ class Konektor_Router {
         $vid_from_qs = sanitize_text_field( $_GET['_vid'] ?? '' );
         $vid         = $vid_from_qs ?: Konektor_Helper::get_or_create_cookie_id();
 
-        // Cek duplicate via transient server-side (per VID + campaign)
-        $is_double = $campaign->double_lead_enabled && self::has_done( $campaign->id, $vid );
+        // Cek duplicate: cookie + IP (wa_link tidak punya phone/email)
+        $src_for_double = substr( sanitize_text_field( $_GET['_src'] ?? ( $_SERVER['HTTP_REFERER'] ?? '' ) ), 0, 2000 );
+        $is_double = $campaign->double_lead_enabled && self::has_done( $campaign->id, $vid, $src_for_double );
 
         $operator = Konektor_Rotator::pick( $campaign->id );
         if ( ! $operator ) {
@@ -174,8 +180,8 @@ class Konektor_Router {
             'email'       => '',
             'phone'       => '',
             'address'     => '',
-            'source_url'  => esc_url_raw( sanitize_text_field( $_GET['_src'] ?? '' ) ?: ( $_SERVER['HTTP_REFERER'] ?? '' ) ),
-            'referrer'    => esc_url_raw( sanitize_text_field( $_GET['_ref'] ?? '' ) ?: ( $_SERVER['HTTP_REFERER'] ?? '' ) ),
+            'source_url'  => substr( sanitize_text_field( $_GET['_src'] ?? ( $_SERVER['HTTP_REFERER'] ?? '' ) ), 0, 2000 ),
+            'referrer'    => substr( sanitize_text_field( $_GET['_ref'] ?? ( $_SERVER['HTTP_REFERER'] ?? '' ) ), 0, 2000 ),
             '_vid'        => $vid,
         ];
         $lead_id = Konektor_Lead::create( $lead_data );
@@ -222,9 +228,13 @@ class Konektor_Router {
 
     // ─── Duplicate state via server transient (per VID + campaign) ──
 
-    private static function has_done( $campaign_id, $vid ) {
-        if ( ! $vid ) return false;
-        return (bool) get_transient( 'knk_done_' . (int) $campaign_id . '_' . md5( $vid ) );
+    private static function has_done( $campaign_id, $vid, $source_url = '' ) {
+        // Fast path: transient cache (cookie-based)
+        if ( $vid && get_transient( 'knk_done_' . (int) $campaign_id . '_' . md5( $vid ) ) ) {
+            return true;
+        }
+        // DB check: cookie_id + IP (covers cookieless browsers and expired transients)
+        return Konektor_Lead::check_double_wa( $campaign_id, $vid, $source_url );
     }
 
     private static function mark_done( $campaign_id, $vid ) {
@@ -481,6 +491,14 @@ class Konektor_Router {
     // ─── Form Submit ─────────────────────────────────────────────────
 
     private static function handle_submit( $campaign ) {
+        // Block bots
+        if ( Konektor_Helper::is_bot_request() ) {
+            status_header( 403 );
+            header( 'Content-Type: application/json; charset=utf-8' );
+            echo wp_json_encode( [ 'success' => false, 'message' => 'Forbidden' ] );
+            exit;
+        }
+
         // Rate limit: 20 submissions per IP per minute
         $ip = Konektor_Helper::get_client_ip();
         if ( ! Konektor_Helper::rate_limit( 'submit_' . $ip, 20, 60 ) ) {
@@ -556,8 +574,10 @@ class Konektor_Router {
         // _vid dari embed JS diutamakan, fallback ke server cookie
         $vid   = sanitize_text_field( $input['_vid'] ?? $_COOKIE['konektor_vid'] ?? '' );
 
-        // Cek duplicate via transient server-side (per VID + campaign)
-        $is_double = $campaign->double_lead_enabled && self::has_done( $campaign->id, $vid );
+        // Cek duplicate: fingerprint (phone+email) + cookie + IP
+        $source_url_for_double = substr( sanitize_text_field( $input['source_url'] ?? '' ), 0, 2000 );
+        $is_double = $campaign->double_lead_enabled
+            && Konektor_Lead::check_double( $campaign->id, $phone, $email, $vid, $source_url_for_double );
 
         $operator = Konektor_Rotator::pick( $campaign->id );
 
@@ -571,7 +591,7 @@ class Konektor_Router {
             'quantity'       => sanitize_text_field( $input['quantity'] ?? '' ),
             'custom_message' => sanitize_textarea_field( $input['custom_message'] ?? '' ),
             'product_name'   => $campaign->product_name,
-            'source_url'     => esc_url_raw( $input['source_url'] ?? ( $_SERVER['HTTP_REFERER'] ?? '' ) ),
+            'source_url'     => substr( sanitize_text_field( $input['source_url'] ?? ( $_SERVER['HTTP_REFERER'] ?? '' ) ), 0, 2000 ),
             '_vid'           => $vid,
         ];
 

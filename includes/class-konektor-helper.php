@@ -158,6 +158,33 @@ class Konektor_Helper {
     }
 
     /**
+     * Detect automated bots/crawlers that must not create leads or fire pixels.
+     */
+    public static function is_bot_request() {
+        $ua = isset( $_SERVER['HTTP_USER_AGENT'] ) ? $_SERVER['HTTP_USER_AGENT'] : '';
+        if ( $ua === '' ) return true;
+
+        $bots = [
+            'facebookexternalhit', 'Facebot',
+            'Twitterbot', 'LinkedInBot', 'WhatsApp', 'TelegramBot',
+            'Discordbot', 'Slackbot', 'slack-imgproxy',
+            'Pinterest', 'Googlebot', 'Googlebot-Image',
+            'bingbot', 'BingPreview', 'DuckDuckBot',
+            'YandexBot', 'Baiduspider', 'ia_archiver',
+            'AhrefsBot', 'SemrushBot', 'MJ12bot',
+            'Bytespider',
+            'HeadlessChrome', 'PhantomJS',
+            'python-requests', 'Go-http-client',
+            'curl/', 'Wget/',
+        ];
+
+        foreach ( $bots as $bot ) {
+            if ( stripos( $ua, $bot ) !== false ) return true;
+        }
+        return false;
+    }
+
+    /**
      * Sanitize a CSS property value — strip </style> breakout attempts.
      */
     public static function sanitize_css_value( $v ) {

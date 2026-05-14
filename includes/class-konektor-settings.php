@@ -20,6 +20,7 @@ class Konektor_Settings {
             'cs_panel_slug',
             'encrypt_lead_data',
             'base_slug',
+            'double_lead_scope',
         ];
         $json_keys = [ 'allowed_domains_global' ];
         foreach ( $allowed as $key ) {

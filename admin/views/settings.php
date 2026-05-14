@@ -76,6 +76,25 @@
             <span class="knk-sw-track"></span>
           </label>
         </div>
+
+        <!-- Double Lead Scope -->
+        <div class="knk-sw-row" style="flex-direction:column;align-items:flex-start;gap:10px;padding-bottom:16px">
+          <div>
+            <strong>Lingkup Deteksi Double Lead</strong>
+            <span class="knk-hint" style="display:block;margin-top:2px">Menentukan cakupan pengecekan duplikat lead berdasarkan identitas pengunjung.</span>
+          </div>
+          <?php $dls = $settings['double_lead_scope'] ?? 'campaign'; ?>
+          <select name="double_lead_scope" class="knk-select" style="width:100%;max-width:480px">
+            <option value="campaign" <?php selected($dls,'campaign'); ?>>Per Kampanye — hanya dalam kampanye yang sama</option>
+            <option value="domain"   <?php selected($dls,'domain');   ?>>Per Domain — semua kampanye dari website/domain yang sama</option>
+            <option value="page"     <?php selected($dls,'page');     ?>>Per Halaman (Slug) — semua kampanye dari URL halaman yang sama</option>
+          </select>
+          <div style="display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--g500);width:100%;max-width:480px">
+            <div style="padding:7px 10px;background:var(--g50);border-radius:6px"><strong style="color:var(--g700)">Per Kampanye:</strong> Kampanye form dan link di halaman yang sama dihitung terpisah.</div>
+            <div style="padding:7px 10px;background:var(--g50);border-radius:6px"><strong style="color:var(--g700)">Per Domain:</strong> Jika pengunjung sudah submit di salah satu kampanye dalam domain, semua kampanye di domain itu terdeteksi double.</div>
+            <div style="padding:7px 10px;background:var(--g50);border-radius:6px"><strong style="color:var(--g700)">Per Halaman:</strong> Jika 1 halaman punya form + link, isi salah satu = double untuk keduanya. Halaman lain tidak terpengaruh.</div>
+          </div>
+        </div>
       </div>
     </div>
 
