@@ -20,9 +20,15 @@ class Konektor_Snack {
      * @param array  $lead_data   Data lead dari form submit
      * @param array  $snack_cfg   Config dari get_config()
      */
-    public static function send_event( $event_name, $lead_data, $snack_cfg ) {
-        if ( empty( $event_name ) ) return;
+    public static function send_event( $event_name_or_type, $lead_data, $snack_cfg ) {
         if ( empty( $snack_cfg['pixel_id'] ) || empty( $snack_cfg['access_token'] ) ) return;
+
+        // Accept either event_type ('page_load' etc.) or a literal event name
+        $resolved   = self::get_event_name( $snack_cfg, $event_name_or_type );
+        $event_name = $resolved !== '' ? $resolved
+            : ( in_array( $event_name_or_type, [ 'page_load', 'form_submit', 'thanks_page' ] )
+                ? '' : trim( $event_name_or_type ) );
+        if ( empty( $event_name ) ) return;
 
         $pixel_id     = sanitize_text_field( $snack_cfg['pixel_id'] );
         $access_token = sanitize_text_field( $snack_cfg['access_token'] );

@@ -66,8 +66,8 @@ class Konektor_Tiktok {
         $event = [
             'event'      => $event_name,
             'event_id'   => $event_id,
-            'timestamp'  => (string) time(),
-            'user_data'  => $user_data,
+            'event_time' => time(),
+            'user'       => $user_data,
             'page'       => [
                 'url'      => $lead_data['source_url'] ?? home_url(),
                 'referrer' => $lead_data['referrer']   ?? ( $_SERVER['HTTP_REFERER'] ?? '' ),
@@ -89,8 +89,10 @@ class Konektor_Tiktok {
         }
 
         $payload = [
-            'pixel_code' => $pixel_id,
-            'data'       => [ $event ],
+            'pixel_code'      => $pixel_id,
+            'event_source'    => 'web',
+            'event_source_id' => $pixel_id,
+            'data'            => [ $event ],
         ];
 
         if ( ! empty( $tiktok_cfg['test_event_code'] ) ) {
