@@ -1,412 +1,476 @@
+<?php
+/**
+ * CS Panel — rendered by CsController::panel()
+ * Variables: $operator, $leads (decrypted), $total, $page
+ */
+$csSlug = Settings::get('cs_panel_slug', 'cs-panel');
+$panelUrl = Helper::siteUrl($csSlug . '/' . $operator->token);
+$perPage  = 30;
+$totalPages = (int)ceil($total / $perPage);
+
+$statusLabels = [
+    'new'       => ['label'=>'Baru',      'color'=>'#2563eb','bg'=>'#eff6ff'],
+    'contacted' => ['label'=>'Dihubungi', 'color'=>'#d97706','bg'=>'#fffbeb'],
+    'purchased' => ['label'=>'Beli',      'color'=>'#16a34a','bg'=>'#f0fdf4'],
+    'cancelled' => ['label'=>'Batal',     'color'=>'#6b7280','bg'=>'#f9fafb'],
+    'blocked'   => ['label'=>'Blokir',    'color'=>'#dc2626','bg'=>'#fef2f2'],
+];
+?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
-<title>Panel CS – Konektor</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Panel CS — <?= Helper::e($operator->name) ?></title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#333}
-.kp-login{display:flex;justify-content:center;align-items:center;min-height:100vh}
-.kp-login-box{background:#fff;padding:40px;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.1);max-width:380px;width:100%;text-align:center}
-.kp-login-box h2{margin-bottom:20px;color:#2563eb;display:flex;align-items:center;justify-content:center;gap:10px}
-.kp-header{background:#2563eb;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px}
-.kp-header-left{display:flex;align-items:center;gap:10px}
-.kp-header h1{font-size:16px;font-weight:700}
-.kp-header-op{font-size:13px;opacity:.85}
-.kp-wrap{max-width:800px;margin:0 auto;padding:12px}
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background: #f1f5f9; color: #0f172a; -webkit-font-smoothing: antialiased; }
+  .cs-header { background: #0f172a; color: #fff; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+  .cs-header h1 { font-size: 16px; font-weight: 700; }
+  .cs-header p { font-size: 12px; opacity: .6; }
+  .cs-badge { background: #2563eb; color: #fff; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .cs-body { max-width: 800px; margin: 0 auto; padding: 12px; }
+  .cs-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+  .cs-stat { background: #fff; border-radius: 10px; padding: 12px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  .cs-stat-num { font-size: 22px; font-weight: 800; }
+  .cs-stat-label { font-size: 11px; color: #64748b; margin-top: 2px; }
 
-/* Stats */
-.kp-stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
-.kp-stat{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;text-align:center;border-top:3px solid #2563eb}
-.kp-stat-n{display:block;font-size:20px;font-weight:800;color:#0f172a}
-.kp-stat-l{display:block;font-size:11px;color:#64748b;margin-top:3px}
+  /* Lead Card */
+  .cs-lead { background: #fff; border-radius: 14px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); position: relative; }
+  .cs-lead.is-blocked { border: 1.5px solid #fecaca; background: #fff7f7; }
+  .cs-lead-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .cs-lead-main { flex: 1; min-width: 0; }
+  .cs-lead-name { font-size: 17px; font-weight: 800; color: #0f172a; line-height: 1.3; word-break: break-word; }
+  .cs-lead-phone { font-size: 15px; font-weight: 700; color: #2563eb; margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+  .cs-lead-camp { font-size: 11px; color: #64748b; margin-top: 4px; }
+  .cs-status-badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; cursor: pointer; border: none; white-space: nowrap; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; }
 
-/* Filters */
-.kp-filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
-.kp-filters select,.kp-filters input[type="text"]{padding:9px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;outline:none;flex:1;min-width:120px}
-.kp-filters select:focus,.kp-filters input:focus{border-color:#2563eb}
-.kp-filters button{padding:9px 14px;border-radius:8px;font-size:14px;font-weight:600}
+  .cs-followup-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 20px; margin-top: 6px; }
+  .cs-followup-done { background: #dcfce7; color: #166534; }
+  .cs-followup-pending { background: #fee2e2; color: #b91c1c; }
 
-/* Lead Cards */
-.kp-lead-card{background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
-.kp-lead-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
-.kp-lead-main{flex:1;min-width:0}
-.kp-lead-name{font-size:17px;font-weight:800;color:#0f172a;word-break:break-word;line-height:1.3}
-.kp-lead-phone{font-size:15px;font-weight:700;color:#2563eb;margin-top:4px}
-.kp-lead-camp{font-size:11px;color:#64748b;margin-top:4px}
-.kp-badge{display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;border:none}
-.kp-badge-new{background:#dbeafe;color:#1d4ed8}
-.kp-badge-contacted{background:#fef9c3;color:#854d0e}
-.kp-badge-purchased{background:#dcfce7;color:#166534}
-.kp-badge-cancelled{background:#fee2e2;color:#991b1b}
-.kp-badge-blocked{background:#f3f4f6;color:#6b7280}
-.kp-badge-double{background:#fef3c7;color:#92400e}
+  .cs-detail-grid { display: grid; grid-template-columns: 1fr; gap: 6px; margin: 10px 0; }
+  .cs-detail-item { font-size: 13px; color: #334155; display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
+  .cs-detail-item b { color: #0f172a; min-width: 70px; flex-shrink: 0; }
+  .cs-detail-item span { word-break: break-word; }
 
-/* Follow-up */
-.kp-followup-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;margin-top:6px}
-.kp-followup-done{background:#dcfce7;color:#166534}
-.kp-followup-pending{background:#fee2e2;color:#b91c1c}
+  .cs-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .cs-btn { padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; border: none; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; min-width: 100px; }
+  .cs-btn-wa  { background: #16a34a; color: #fff; }
+  .cs-btn-tel { background: #0077b6; color: #fff; }
+  .cs-btn-followup { background: #f0fdf4; color: #166534; border: 1.5px solid #86efac; }
+  .cs-btn-followup.done { background: #f8fafc; color: #94a3b8; border-color: #e2e8f0; }
+  .cs-btn-status { background: #f1f5f9; color: #334155; flex: 0 0 auto; }
+  .cs-btn-block  { background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca; flex: 0 0 auto; }
+  .cs-btn-unblock{ background: #f0fdf4; color: #166534; border: 1.5px solid #86efac; flex: 0 0 auto; }
+  .cs-date { font-size: 11px; color: #94a3b8; display: block; margin-top: 10px; }
 
-/* Details */
-.kp-details{display:grid;grid-template-columns:1fr;gap:6px;margin:10px 0}
-.kp-detail{font-size:13px;color:#334155;display:flex;align-items:flex-start;gap:8px;line-height:1.4}
-.kp-detail b{color:#0f172a;min-width:70px;flex-shrink:0;font-size:12px;text-transform:uppercase}
-.kp-detail span{word-break:break-word}
+  .cs-empty { text-align: center; padding: 48px 20px; color: #94a3b8; }
+  .cs-pagination { display: flex; justify-content: center; gap: 6px; margin-top: 16px; flex-wrap: wrap; }
+  .cs-page-btn { padding: 8px 14px; border-radius: 8px; border: 1.5px solid #e2e8f0; background: #fff; font-size: 14px; cursor: pointer; text-decoration: none; color: #334155; font-weight: 600; }
+  .cs-page-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
 
-/* Actions */
-.kp-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.kp-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border:none;border-radius:10px;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;transition:.15s;flex:1;min-width:90px;text-decoration:none}
-.kp-btn-wa{background:#16a34a;color:#fff}
-.kp-btn-wa:hover{background:#15803d}
-.kp-btn-followup{background:#f0fdf4;color:#166534;border:1.5px solid #86efac}
-.kp-btn-followup:hover{background:#dcfce7}
-.kp-btn-followup.done{background:#f8fafc;color:#94a3b8;border-color:#e2e8f0;cursor:default}
-.kp-btn-status{background:#f1f5f9;color:#334155;flex:0 0 auto}
-.kp-btn-status:hover{background:#e2e8f0}
-.kp-btn-primary{background:#2563eb;color:#fff}
-.kp-btn-primary:hover{background:#1d4ed8}
-.kp-btn-danger{background:#ef4444;color:#fff}
-.kp-btn-danger:hover{background:#dc2626}
-.kp-btn-ghost{background:#f1f5f9;color:#374151;border:1px solid #e2e8f0}
-.kp-btn-ghost:hover{background:#e2e8f0}
-.kp-btn-sm{padding:6px 12px;font-size:13px;border-radius:6px}
-select.kp-status-sel{border:1.5px solid #e2e8f0;border-radius:6px;padding:6px 10px;font-size:13px;color:#1e293b;background:#fff;cursor:pointer;outline:none;margin-top:6px;width:100%}
-select.kp-status-sel:focus{border-color:#2563eb}
+  /* Dialog/Modal */
+  .cs-dialog-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
+  .cs-dialog-overlay.open { display: flex; }
+  .cs-dialog { background: #fff; border-radius: 16px; width: 100%; max-width: 420px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+  .cs-dialog-head { padding: 18px 20px 12px; border-bottom: 1px solid #f1f5f9; }
+  .cs-dialog-head h3 { font-size: 16px; font-weight: 800; }
+  .cs-dialog-head p { font-size: 12px; color: #64748b; margin-top: 2px; }
+  .cs-dialog-body { padding: 16px 20px 20px; }
+  .cs-opt { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1.5px solid #e2e8f0; border-radius: 10px; cursor: pointer; margin-bottom: 8px; transition: border-color .15s; }
+  .cs-opt.selected, .cs-opt:has(input:checked) { border-color: #2563eb; }
+  .cs-opt input { accent-color: #2563eb; }
+  .cs-opt-label { font-size: 13px; font-weight: 600; }
+  .cs-opt-desc { font-size: 11px; color: #64748b; margin-top: 1px; }
+  .cs-field { width: 100%; padding: 10px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; font-family: inherit; margin-top: 12px; }
+  .cs-field:focus { outline: none; border-color: #2563eb; }
+  .cs-dialog-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .cs-dbtn { padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; border: none; }
+  .cs-dbtn-cancel { background: #f1f5f9; color: #334155; }
+  .cs-dbtn-save { background: #2563eb; color: #fff; }
+  .cs-dbtn-block { background: #dc2626; color: #fff; }
 
-.kp-date{font-size:11px;color:#94a3b8;margin-top:10px;display:block}
-
-/* Modal */
-.kp-modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;justify-content:center;align-items:center;padding:16px}
-.kp-modal-bg.active{display:flex}
-.kp-modal{background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.15)}
-.kp-modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
-.kp-modal-head h3{margin:0;font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
-.kp-modal-x{background:none;border:none;cursor:pointer;color:#94a3b8;font-size:20px;line-height:1;padding:0}
-.kp-modal-x:hover{color:#374151}
-.kp-modal textarea,.kp-modal input[type="text"]{width:100%;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:14px;margin-bottom:12px;outline:none;font-family:inherit}
-.kp-modal textarea:focus,.kp-modal input:focus{border-color:#2563eb}
-
-.kp-empty{text-align:center;padding:48px;color:#9ca3af;font-size:14px}
-.kp-empty i{font-size:32px;margin-bottom:12px;display:block;opacity:.4}
-.kp-loading{text-align:center;padding:32px;color:#64748b}
-.kp-loading i{font-size:24px;animation:spin .8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-.kp-pagination{display:flex;gap:6px;margin-top:16px;justify-content:center;flex-wrap:wrap}
-.kp-pagination button{padding:8px 16px;border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;transition:.15s}
-.kp-pagination button.active{background:#2563eb;color:#fff;border-color:#2563eb}
-.kp-pagination button:hover:not(.active){background:#f1f5f9}
-
-@media (min-width: 640px) {
-  .kp-details{grid-template-columns:1fr 1fr}
-  .kp-btn{flex:0 0 auto}
-  .kp-stat-row{grid-template-columns:repeat(4,1fr)}
-}
-@media (max-width: 480px) {
-  .kp-stat-row{grid-template-columns:repeat(2,1fr)}
-}
+  @media (min-width: 640px) {
+    .cs-detail-grid { grid-template-columns: 1fr 1fr; }
+    .cs-actions .cs-btn { flex: 0 0 auto; }
+  }
 </style>
 </head>
 <body>
-<?php
-if ( ! $operator ) :
-?>
-<div class="kp-login">
-    <div class="kp-login-box">
-        <h2><i class="fa-solid fa-lock" style="color:#2563eb"></i> Panel CS</h2>
-        <p style="color:#ef4444;margin-bottom:16px">Token tidak valid atau sudah tidak berlaku. Hubungi admin untuk mendapatkan link baru.</p>
-        <p style="font-size:13px;color:#6b7280">Powered by Konektor</p>
-    </div>
+
+<div class="cs-header">
+  <div>
+    <h1>Panel CS — <?= Helper::e($operator->name) ?></h1>
+    <p>Konektor Lead Management</p>
+  </div>
+  <span class="cs-badge"><?= $total ?> Lead</span>
 </div>
-<?php else: ?>
-<div class="kp-header">
-    <div class="kp-header-left">
-        <i class="fa-solid fa-link" style="font-size:18px;opacity:.9"></i>
+
+<div class="cs-body">
+
+  <!-- Stats -->
+  <?php
+  $new       = count(array_filter($leads, function($l) { return $l->status === 'new'; }));
+  $contacted = count(array_filter($leads, function($l) { return $l->status === 'contacted'; }));
+  $purchased = count(array_filter($leads, function($l) { return $l->status === 'purchased'; }));
+  ?>
+  <div class="cs-stats">
+    <div class="cs-stat"><div class="cs-stat-num" style="color:#2563eb"><?= $new ?></div><div class="cs-stat-label">Baru</div></div>
+    <div class="cs-stat"><div class="cs-stat-num" style="color:#d97706"><?= $contacted ?></div><div class="cs-stat-label">Dihubungi</div></div>
+    <div class="cs-stat"><div class="cs-stat-num" style="color:#16a34a"><?= $purchased ?></div><div class="cs-stat-label">Berhasil Beli</div></div>
+  </div>
+
+  <!-- Lead list -->
+  <?php if (empty($leads)): ?>
+  <div class="cs-empty">Belum ada lead yang ditugaskan ke Anda.</div>
+  <?php else: ?>
+
+  <?php foreach ($leads as $lead):
+    $st    = $statusLabels[$lead->status] ?? $statusLabels['new'];
+    $waUrl = Helper::waUrl($lead->phone ?? '');
+    $camp  = $lead->campaign_name ?? '';
+    $isFollowedUp = !empty($lead->followed_up_at);
+    $isBlocked    = $lead->status === 'blocked';
+  ?>
+  <div class="cs-lead <?= $isBlocked ? 'is-blocked' : '' ?>" id="lead-<?= $lead->id ?>">
+    <div class="cs-lead-top">
+      <div class="cs-lead-main">
+        <div class="cs-lead-name"><?= Helper::e($lead->name ?: 'Tanpa Nama') ?></div>
+        <?php if ($lead->phone): ?>
+        <div class="cs-lead-phone">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          <?= Helper::e($lead->phone) ?>
+        </div>
+        <?php endif; ?>
+        <div class="cs-lead-camp"><?= Helper::e($camp) ?> <?= $lead->product_name ? '• ' . Helper::e($lead->product_name) : '' ?></div>
+
+        <!-- Follow-up badge -->
+        <?php if ($isFollowedUp): ?>
+          <div class="cs-followup-badge cs-followup-done">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Sudah Follow-Up <?= date('d/m H:i', strtotime($lead->followed_up_at)) ?>
+          </div>
+        <?php else: ?>
+          <div class="cs-followup-badge cs-followup-pending">⏱ Belum Follow-Up</div>
+        <?php endif; ?>
+      </div>
+
+      <!-- Status badge (clickable jika tidak blocked) -->
+      <?php if (!$isBlocked): ?>
+      <button class="cs-status-badge" id="status-badge-<?= $lead->id ?>"
+        style="background:<?= $st['bg'] ?>;color:<?= $st['color'] ?>"
+        onclick="openStatusDialog(<?= $lead->id ?>, '<?= $lead->status ?>')">
+        <?= $st['label'] ?> ▾
+      </button>
+      <?php else: ?>
+      <span class="cs-status-badge" style="background:<?= $st['bg'] ?>;color:<?= $st['color'] ?>;cursor:default;">
+        🚫 <?= $st['label'] ?>
+      </span>
+      <?php endif; ?>
+    </div>
+
+    <div class="cs-detail-grid">
+      <?php if ($lead->email): ?>
+      <div class="cs-detail-item"><b>Email</b> <span><?= Helper::e($lead->email) ?></span></div>
+      <?php endif; ?>
+      <?php if ($lead->quantity): ?>
+      <div class="cs-detail-item"><b>Jumlah</b> <span><?= Helper::e($lead->quantity) ?></span></div>
+      <?php endif; ?>
+      <?php if ($lead->address): ?>
+      <div class="cs-detail-item"><b>Alamat</b> <span><?= Helper::e($lead->address) ?></span></div>
+      <?php endif; ?>
+      <?php if ($lead->custom_message): ?>
+      <div class="cs-detail-item"><b>Pesan</b> <span><?= Helper::e($lead->custom_message) ?></span></div>
+      <?php endif; ?>
+      <?php if (!empty($lead->extra_data)): ?>
+        <?php $extra = json_decode($lead->extra_data, true); ?>
+        <?php if ($extra && is_array($extra)): ?>
+          <?php foreach ($extra as $k => $v): ?>
+            <div class="cs-detail-item"><b><?= Helper::e(ucfirst($k)) ?></b> <span><?= Helper::e($v) ?></span></div>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      <?php endif; ?>
+    </div>
+
+    <div class="cs-actions">
+      <?php if (!$isBlocked && $lead->phone): ?>
+      <a href="<?= htmlspecialchars($waUrl) ?>" class="cs-btn cs-btn-wa" target="_blank">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        WA
+      </a>
+      <?php endif; ?>
+      <?php if (!$isBlocked && ($lead->phone || $lead->email)): ?>
+      <button class="cs-btn cs-btn-followup <?= $isFollowedUp ? 'done' : '' ?>" id="fu-<?= $lead->id ?>" onclick="doFollowUp(<?= $lead->id ?>)" <?= $isFollowedUp ? 'disabled' : '' ?>>
+        <?= $isFollowedUp ? '✓ Sudah Follow-Up' : ($lead->phone ? 'Follow-Up WA' : 'Follow-Up Email') ?>
+      </button>
+      <?php endif; ?>
+      <?php if (!$isBlocked): ?>
+      <button class="cs-btn cs-btn-status" onclick="openStatusDialog(<?= $lead->id ?>, '<?= $lead->status ?>')">Ubah Status</button>
+      <button class="cs-btn cs-btn-block" onclick="openBlockDialog(<?= $lead->id ?>)">🚫 Blokir</button>
+      <?php else: ?>
+      <button class="cs-btn cs-btn-unblock" onclick="doUnblock(<?= $lead->id ?>)">✓ Unblock</button>
+      <?php endif; ?>
+    </div>
+
+    <span class="cs-date">🕒 <?= date('d/m/Y H:i', strtotime($lead->created_at)) ?></span>
+  </div>
+  <?php endforeach; ?>
+
+  <!-- Pagination -->
+  <?php if ($totalPages > 1): ?>
+  <div class="cs-pagination">
+    <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+    <a href="?page=<?= $i ?>" class="cs-page-btn <?= $page === $i ? 'active' : '' ?>"><?= $i ?></a>
+    <?php endfor; ?>
+  </div>
+  <?php endif; ?>
+  <?php endif; ?>
+
+</div><!-- /cs-body -->
+
+<!-- ── Status Dialog ── -->
+<div class="cs-dialog-overlay" id="statusDialog">
+  <div class="cs-dialog">
+    <div class="cs-dialog-head">
+      <h3>Ubah Status</h3>
+      <p>Pilih status baru untuk lead ini</p>
+    </div>
+    <div class="cs-dialog-body">
+      <div id="statusOpts">
+        <?php foreach ($statusLabels as $sv => $sl):
+          if ($sv === 'blocked') continue;
+        ?>
+        <label class="cs-opt" data-val="<?= $sv ?>">
+          <input type="radio" name="cs_status" value="<?= $sv ?>">
+          <div>
+            <div class="cs-opt-label" style="color:<?= $sl['color'] ?>;"><?= $sl['label'] ?></div>
+          </div>
+        </label>
+        <?php endforeach; ?>
+      </div>
+      <input type="text" class="cs-field" id="statusNoteInput" placeholder="Catatan (opsional)">
+      <div class="cs-dialog-footer">
+        <button class="cs-dbtn cs-dbtn-cancel" onclick="closeDialog('statusDialog')">Batal</button>
+        <button class="cs-dbtn cs-dbtn-save" onclick="doStatusSave()">Simpan</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Block Dialog ── -->
+<div class="cs-dialog-overlay" id="blockDialog">
+  <div class="cs-dialog">
+    <div class="cs-dialog-head">
+      <h3>Blokir Lead</h3>
+      <p>Tentukan metode pemblokiran</p>
+    </div>
+    <div class="cs-dialog-body">
+      <label class="cs-opt selected" id="blk-both" onclick="selectBlock('both')">
+        <input type="radio" name="cs_block_by" value="both" checked>
         <div>
-            <h1>Panel CS</h1>
-            <div class="kp-header-op"><?php echo esc_html( $operator->name ); ?></div>
+          <div class="cs-opt-label">IP + Cookie (Keduanya)</div>
+          <div class="cs-opt-desc">Paling kuat — blokir IP dan browser cookie</div>
         </div>
-    </div>
-    <span style="font-size:12px;opacity:.7">Konektor</span>
-</div>
-<div class="kp-wrap">
-
-    <div class="kp-stat-row" id="kp-stats" style="display:none">
-        <div class="kp-stat" style="border-top-color:#2563eb"><span class="kp-stat-n" id="stat-total">–</span><span class="kp-stat-l">Total</span></div>
-        <div class="kp-stat" style="border-top-color:#3b82f6"><span class="kp-stat-n" id="stat-new">–</span><span class="kp-stat-l">Baru</span></div>
-        <div class="kp-stat" style="border-top-color:#d97706"><span class="kp-stat-n" id="stat-contacted">–</span><span class="kp-stat-l">Dihubungi</span></div>
-        <div class="kp-stat" style="border-top-color:#16a34a"><span class="kp-stat-n" id="stat-purchased">–</span><span class="kp-stat-l">Beli</span></div>
-    </div>
-
-    <div class="kp-filters">
-        <select id="filter-campaign" class="kp-camp-filter">
-            <option value="">Semua Kampanye</option>
-        </select>
-        <select id="filter-status">
-            <option value="">Semua Status</option>
-            <option value="new">Baru</option>
-            <option value="contacted">Dihubungi</option>
-            <option value="purchased">Beli</option>
-            <option value="cancelled">Batal</option>
-            <option value="blocked">Diblokir</option>
-        </select>
-        <input type="text" id="filter-search" placeholder="Cari nama / HP...">
-        <button class="kp-btn kp-btn-primary" id="btn-load"><i class="fa-solid fa-rotate"></i> Muat</button>
-    </div>
-
-    <div id="lead-list">
-        <div class="kp-loading"><i class="fa-solid fa-spinner"></i></div>
-    </div>
-
-    <div class="kp-pagination" id="kp-pagination"></div>
-</div>
-
-<!-- Block Modal -->
-<div class="kp-modal-bg" id="block-modal">
-    <div class="kp-modal">
-        <div class="kp-modal-head">
-            <h3><i class="fa-solid fa-ban" style="color:#ef4444"></i> Blokir Customer</h3>
-            <button class="kp-modal-x" id="btn-cancel-block"><i class="fa-solid fa-xmark"></i></button>
+      </label>
+      <label class="cs-opt" id="blk-ip" onclick="selectBlock('ip')">
+        <input type="radio" name="cs_block_by" value="ip">
+        <div>
+          <div class="cs-opt-label">IP Address saja</div>
+          <div class="cs-opt-desc">Blokir semua user dari IP yang sama</div>
         </div>
-        <input type="hidden" id="block-lead-id">
-        <textarea id="block-reason" rows="3" placeholder="Alasan pemblokiran..."></textarea>
-        <div style="display:flex;gap:10px">
-            <button class="kp-btn kp-btn-danger" id="btn-confirm-block"><i class="fa-solid fa-ban"></i> Blokir</button>
-            <button class="kp-btn kp-btn-ghost" id="btn-cancel-block2"><i class="fa-solid fa-xmark"></i> Batal</button>
+      </label>
+      <label class="cs-opt" id="blk-cookie" onclick="selectBlock('cookie')">
+        <input type="radio" name="cs_block_by" value="cookie">
+        <div>
+          <div class="cs-opt-label">Cookie / Browser saja</div>
+          <div class="cs-opt-desc">Blokir browser spesifik via cookie ID</div>
         </div>
+      </label>
+      <input type="text" class="cs-field" id="blockReasonInput" placeholder="Alasan pemblokiran (opsional)">
+      <div class="cs-dialog-footer">
+        <button class="cs-dbtn cs-dbtn-cancel" onclick="closeDialog('blockDialog')">Batal</button>
+        <button class="cs-dbtn cs-dbtn-block" onclick="doBlock()">🚫 Blokir</button>
+      </div>
     </div>
+  </div>
 </div>
 
 <script>
-(function(){
-var PANEL_URL = '<?php echo esc_js( home_url( '/' . Konektor_Helper::get_setting( 'base_slug', 'konektor' ) . '/cs-panel/' ) ); ?>';
-var TOKEN = '<?php echo esc_js( sanitize_text_field( $_GET['token'] ?? '' ) ); ?>';
-var currentPage = 1;
-var totalPages  = 1;
-var statsLoaded = false;
+var PANEL_URL = <?= json_encode($panelUrl) ?>;
+var _activeLeadId = null;
 
-function post(act, extra, cb) {
-    var fd = new FormData();
-    fd.append('act', act);
-    fd.append('token', TOKEN);
-    if (extra) Object.keys(extra).forEach(function(k){ fd.append(k, extra[k]); });
-    fetch(PANEL_URL + '?token=' + encodeURIComponent(TOKEN), {method:'POST', body:fd})
-        .then(function(r){ return r.json(); })
-        .then(cb)
-        .catch(function(){ cb({success:false}); });
+var statusMeta = <?= json_encode(array_map(function($s){ return ['label'=>$s['label'],'color'=>$s['color'],'bg'=>$s['bg']]; }, $statusLabels)) ?>;
+
+// ─── Dialog helpers ───────────────────────────────────────────────────────
+function closeDialog(id) {
+  document.getElementById(id).classList.remove('open');
 }
-
-var statusLabels = {new:'Baru',contacted:'Dihubungi',purchased:'Beli',cancelled:'Batal',blocked:'Diblokir'};
-var statusClasses = {new:'kp-badge-new',contacted:'kp-badge-contacted',purchased:'kp-badge-purchased',cancelled:'kp-badge-cancelled',blocked:'kp-badge-blocked'};
-
-function loadCampaigns() {
-    post('get_campaigns', {}, function(r) {
-        if (!r.success) return;
-        var sel = document.getElementById('filter-campaign');
-        (r.campaigns || []).forEach(function(c) {
-            var o = document.createElement('option');
-            o.value = c.id; o.textContent = c.name;
-            sel.appendChild(o);
-        });
-    });
-}
-
-function loadLeads(page) {
-    currentPage = page || 1;
-    var status     = document.getElementById('filter-status').value;
-    var campaignId = document.getElementById('filter-campaign').value;
-    var search     = document.getElementById('filter-search').value;
-
-    document.getElementById('lead-list').innerHTML = '<div class="kp-loading"><i class="fa-solid fa-spinner"></i></div>';
-
-    post('get_leads', {page: currentPage, status: status, campaign_id: campaignId}, function(data) {
-        if (!data.success) {
-            document.getElementById('lead-list').innerHTML = '<div class="kp-empty"><i class="fa-solid fa-circle-exclamation"></i><br>Gagal memuat data.</div>';
-            return;
-        }
-        totalPages = data.pages || 1;
-        if (!statsLoaded) { loadStats(); statsLoaded = true; }
-        renderLeads(data.leads || [], search);
-        renderPagination(data.total || 0);
-    });
-}
-
-function loadStats() {
-    post('get_leads', {per_page: 0, page: 1}, function(d) {
-        if (!d.success) return;
-        document.getElementById('kp-stats').style.display = 'grid';
-        document.getElementById('stat-total').textContent = d.total || 0;
-    });
-    ['new','contacted','purchased'].forEach(function(s) {
-        post('get_leads', {status: s, page: 1}, function(d) {
-            var el = document.getElementById('stat-' + s);
-            if (el && d.success) el.textContent = d.total || 0;
-        });
-    });
-}
-
-function esc(s) {
-    var d = document.createElement('div');
-    d.appendChild(document.createTextNode(s||''));
-    return d.innerHTML;
-}
-
-function formatPhone(p) {
-    if (!p) return '';
-    p = p.replace(/\D/g,'');
-    if (p.startsWith('0')) p = '62' + p.slice(1);
-    return p;
-}
-
-function renderLeads(leads, search) {
-    var container = document.getElementById('lead-list');
-    if (search) {
-        search = search.toLowerCase();
-        leads = leads.filter(function(l){ return (l.name||'').toLowerCase().includes(search)||(l.phone||'').includes(search); });
-    }
-    if (!leads.length) {
-        container.innerHTML = '<div class="kp-empty"><i class="fa-solid fa-inbox"></i><br>Tidak ada lead.</div>';
-        return;
-    }
-
-    var html = '';
-    leads.forEach(function(l) {
-        var badge = '<span class="kp-badge ' + (statusClasses[l.status]||'kp-badge-blocked') + '">' + (statusLabels[l.status]||l.status) + '</span>';
-        if (l.is_double) badge += ' <span class="kp-badge kp-badge-double">Double</span>';
-
-        var name = l.name ? esc(l.name) : '<span style="font-size:12px;color:#94a3b8"><i class="fa-solid fa-link"></i> WA Click</span>';
-        var phone = l.phone ? esc(l.phone) : '';
-        var phoneLink = phone ? 'https://wa.me/' + formatPhone(phone) : '';
-
-        var fuDone = !!l.followed_up_at;
-        var fuDate = fuDone ? esc((l.followed_up_at||'').slice(0,16)) : '';
-        var fuBtnCls = 'kp-btn kp-btn-followup' + (fuDone ? ' done' : '');
-        var fuChannel = l.phone ? 'WA' : (l.email ? 'Email' : '');
-        var fuBtnTxt = fuDone ? '<i class="fa-solid fa-check"></i> Sudah Follow-Up' : '<i class="fa-solid fa-paper-plane"></i> Follow-Up ' + fuChannel;
-        var fuBadge = '';
-        if (fuDone) {
-            fuBadge = '<div class="kp-followup-badge kp-followup-done"><i class="fa-solid fa-check"></i> ' + fuDate + '</div>';
-        } else {
-            fuBadge = '<div class="kp-followup-badge kp-followup-pending"><i class="fa-regular fa-clock"></i> Belum Follow-Up</div>';
-        }
-
-        // Details
-        var details = '';
-        if (l.email) details += '<div class="kp-detail"><b>Email</b> <span>' + esc(l.email) + '</span></div>';
-        if (l.address) details += '<div class="kp-detail"><b>Alamat</b> <span>' + esc(l.address) + '</span></div>';
-        if (l.quantity) details += '<div class="kp-detail"><b>Jumlah</b> <span>' + esc(l.quantity) + '</span></div>';
-        if (l.message) details += '<div class="kp-detail"><b>Pesan</b> <span>' + esc(l.message) + '</span></div>';
-
-        var statusSel = '<select class="kp-status-sel" onchange="updateStatus(' + l.id + ',this.value)">';
-        ['new','contacted','purchased','cancelled'].forEach(function(s){
-            statusSel += '<option value="' + s + '"' + (l.status===s?' selected':'') + '>' + statusLabels[s] + '</option>';
-        });
-        statusSel += '</select>';
-
-        html += '<div class="kp-lead-card" id="lead-' + l.id + '">';
-        html += '<div class="kp-lead-top">';
-        html += '<div class="kp-lead-main">';
-        html += '<div class="kp-lead-name">' + name + '</div>';
-        if (phone) html += '<div class="kp-lead-phone"><i class="fa-solid fa-phone"></i> ' + phone + '</div>';
-        html += '<div class="kp-lead-camp">' + esc(l.campaign||'') + '</div>';
-        html += fuBadge;
-        html += '</div>';
-        html += '<div>' + badge + '</div>';
-        html += '</div>';
-
-        if (details) html += '<div class="kp-details">' + details + '</div>';
-
-        html += '<div class="kp-actions">';
-        if (phoneLink) {
-            html += '<a href="' + phoneLink + '" target="_blank" class="kp-btn kp-btn-wa"><i class="fa-brands fa-whatsapp"></i> WA</a>';
-        }
-        if (l.phone || l.email) {
-            html += '<button class="' + fuBtnCls + '" id="fu-' + l.id + '" onclick="doFollowUp(' + l.id + ',this)" ' + (fuDone?'disabled':'') + '>' + fuBtnTxt + '</button>';
-        }
-        html += '<button class="kp-btn kp-btn-danger kp-btn-sm" onclick="openBlock(' + l.id + ')"><i class="fa-solid fa-ban"></i></button>';
-        html += '</div>';
-
-        html += '<div style="margin-top:8px">' + statusSel + '</div>';
-        html += '<span class="kp-date"><i class="fa-regular fa-clock"></i> ' + esc((l.date||'').slice(0,16)) + '</span>';
-        html += '</div>';
-    });
-
-    container.innerHTML = html;
-}
-
-function renderPagination(total) {
-    var pag = document.getElementById('kp-pagination');
-    if (totalPages <= 1) { pag.innerHTML = ''; return; }
-    var h = '';
-    for (var i = 1; i <= totalPages; i++) {
-        h += '<button onclick="loadLeads(' + i + ')" class="' + (i===currentPage?'active':'') + '">' + i + '</button>';
-    }
-    pag.innerHTML = h;
-}
-
-window.updateStatus = function(leadId, status) {
-    post('update_status', {lead_id: leadId, status: status, note: ''}, function(){});
-};
-
-window.doFollowUp = function(leadId, btn) {
-    if (btn.disabled) return;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-    post('follow_up', {lead_id: leadId}, function(r) {
-        if (r.success) {
-            btn.classList.add('done');
-            btn.innerHTML = '<i class="fa-solid fa-check"></i> Sudah Follow-Up';
-            var card = document.getElementById('lead-' + leadId);
-            if (card) {
-                var oldBadges = card.querySelectorAll('.kp-followup-badge');
-                oldBadges.forEach(function(b){ b.remove(); });
-                var now = new Date();
-                var ts = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')
-                       + ' '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
-                var badge = document.createElement('div');
-                badge.className = 'kp-followup-badge kp-followup-done';
-                badge.innerHTML = '<i class="fa-solid fa-check"></i> ' + ts;
-                var main = card.querySelector('.kp-lead-main');
-                if (main) main.appendChild(badge);
-            }
-            if (r.url) window.open(r.url, '_blank');
-        } else {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Follow-Up';
-            alert(r.message || 'Gagal');
-        }
-    });
-};
-
-window.openBlock = function(leadId) {
-    document.getElementById('block-lead-id').value = leadId;
-    document.getElementById('block-reason').value = '';
-    document.getElementById('block-modal').classList.add('active');
-};
-
-document.getElementById('btn-confirm-block').addEventListener('click', function() {
-    var id     = document.getElementById('block-lead-id').value;
-    var reason = document.getElementById('block-reason').value;
-    post('block_lead', {lead_id: id, reason: reason}, function() {
-        document.getElementById('block-modal').classList.remove('active');
-        loadLeads(currentPage);
-    });
+document.querySelectorAll('.cs-dialog-overlay').forEach(function(el) {
+  el.addEventListener('click', function(e) { if (e.target === el) el.classList.remove('open'); });
 });
 
-function closeBlock() { document.getElementById('block-modal').classList.remove('active'); }
-document.getElementById('btn-cancel-block').addEventListener('click', closeBlock);
-document.getElementById('btn-cancel-block2').addEventListener('click', closeBlock);
+// ─── Status dialog ────────────────────────────────────────────────────────
+function openStatusDialog(leadId, currentStatus) {
+  _activeLeadId = leadId;
+  var radios = document.querySelectorAll('input[name=cs_status]');
+  radios.forEach(function(r) { r.checked = (r.value === currentStatus); });
+  document.querySelectorAll('#statusOpts .cs-opt').forEach(function(lbl) {
+    lbl.classList.toggle('selected', lbl.dataset.val === currentStatus);
+    lbl.onclick = function() {
+      document.querySelectorAll('#statusOpts .cs-opt').forEach(function(x){ x.classList.remove('selected'); });
+      lbl.classList.add('selected');
+      lbl.querySelector('input').checked = true;
+    };
+  });
+  document.getElementById('statusNoteInput').value = '';
+  document.getElementById('statusDialog').classList.add('open');
+}
 
-document.getElementById('btn-load').addEventListener('click', function(){ loadLeads(1); });
-document.getElementById('filter-status').addEventListener('change', function(){ loadLeads(1); });
-document.getElementById('filter-campaign').addEventListener('change', function(){ loadLeads(1); });
+function doStatusSave() {
+  var checked = document.querySelector('input[name=cs_status]:checked');
+  if (!checked) return;
+  var status = checked.value;
+  var note   = document.getElementById('statusNoteInput').value;
 
-loadCampaigns();
-loadLeads(1);
-})();
+  fetch(PANEL_URL + '/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lead_id: _activeLeadId, status: status, note: note })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    if (res.success) {
+      var sm = statusMeta[status];
+      var badge = document.getElementById('status-badge-' + _activeLeadId);
+      if (badge && sm) {
+        badge.textContent = sm.label + ' ▾';
+        badge.style.background = sm.bg;
+        badge.style.color = sm.color;
+        badge.setAttribute('onclick', 'openStatusDialog(' + _activeLeadId + ', \'' + status + '\')');
+      }
+      closeDialog('statusDialog');
+    }
+  });
+}
+
+// ─── Block dialog ─────────────────────────────────────────────────────────
+function selectBlock(val) {
+  ['both','ip','cookie'].forEach(function(v) {
+    var el = document.getElementById('blk-' + v);
+    if (el) el.classList.toggle('selected', v === val);
+    var r = el ? el.querySelector('input') : null;
+    if (r) r.checked = (v === val);
+  });
+}
+
+function openBlockDialog(leadId) {
+  _activeLeadId = leadId;
+  selectBlock('both');
+  document.getElementById('blockReasonInput').value = '';
+  document.getElementById('blockDialog').classList.add('open');
+}
+
+function doBlock() {
+  var checked = document.querySelector('input[name=cs_block_by]:checked');
+  var blockBy = checked ? checked.value : 'both';
+  var reason  = document.getElementById('blockReasonInput').value;
+
+  fetch(PANEL_URL + '/block', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lead_id: _activeLeadId, block_by: blockBy, reason: reason })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    if (res.success) {
+      var card = document.getElementById('lead-' + _activeLeadId);
+      if (card) {
+        card.classList.add('is-blocked');
+        // Replace badge
+        var badge = document.getElementById('status-badge-' + _activeLeadId);
+        if (badge) {
+          var span = document.createElement('span');
+          span.className = 'cs-status-badge';
+          span.style.background = '#fef2f2';
+          span.style.color = '#dc2626';
+          span.style.cursor = 'default';
+          span.textContent = '🚫 Blokir';
+          badge.replaceWith(span);
+        }
+        // Replace actions
+        var actions = card.querySelector('.cs-actions');
+        if (actions) {
+          actions.innerHTML = '<button class="cs-btn cs-btn-unblock" onclick="doUnblock(' + _activeLeadId + ')">✓ Unblock</button>';
+        }
+      }
+      closeDialog('blockDialog');
+    } else {
+      alert(res.message || 'Gagal memblokir lead.');
+    }
+  });
+}
+
+function doUnblock(leadId) {
+  if (!confirm('Cabut blokir lead ini?')) return;
+  fetch(PANEL_URL + '/unblock', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lead_id: leadId })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    if (res.success) {
+      // Reload page to show updated state
+      location.reload();
+    } else {
+      alert(res.message || 'Gagal unblock lead.');
+    }
+  });
+}
+
+// ─── Follow-up ────────────────────────────────────────────────────────────
+function doFollowUp(leadId) {
+  var btn = document.getElementById('fu-' + leadId);
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = 'Mengirim...';
+
+  fetch(PANEL_URL + '/followup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lead_id: leadId })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    if (res.success) {
+      btn.classList.add('done');
+      btn.textContent = '✓ Sudah Follow-Up';
+      var card = document.getElementById('lead-' + leadId);
+      if (card) {
+        var oldBadges = card.querySelectorAll('.cs-followup-badge');
+        oldBadges.forEach(function(b) { b.remove(); });
+        var badge = document.createElement('div');
+        badge.className = 'cs-followup-badge cs-followup-done';
+        var now = new Date();
+        var ts = String(now.getDate()).padStart(2,'0') + '/' + String(now.getMonth()+1).padStart(2,'0') + ' ' + String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+        badge.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Sudah Follow-Up ' + ts;
+        var main = card.querySelector('.cs-lead-main');
+        if (main) main.appendChild(badge);
+      }
+      if (res.url) window.open(res.url, '_blank');
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Follow-Up';
+      alert(res.message || 'Gagal melakukan follow-up.');
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    btn.textContent = 'Follow-Up';
+    alert('Koneksi gagal, coba lagi.');
+  });
+}
 </script>
-<?php endif; ?>
 </body>
 </html>
