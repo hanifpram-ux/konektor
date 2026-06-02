@@ -38,7 +38,15 @@ class Konektor_Snack {
         if ( $is_test && ! empty( $snack_cfg['test_click_id'] ) ) {
             $click_id = sanitize_text_field( $snack_cfg['test_click_id'] );
         } else {
-            $click_id = sanitize_text_field( $lead_data['click_id'] ?? $_GET['click_id'] ?? $_GET['clickid'] ?? '' );
+            // Priority: kwai_click_id dari extra_data → click_id → $_GET
+            $extra  = is_array( $lead_data['extra_data'] ?? null ) ? $lead_data['extra_data'] : [];
+            $click_id = sanitize_text_field(
+                $extra['kwai_click_id']
+                ?? $lead_data['click_id']
+                ?? $_GET['click_id']
+                ?? $_GET['clickid']
+                ?? ''
+            );
         }
 
         $payload = [

@@ -41,7 +41,7 @@ class Konektor_Tiktok {
         $event_name = trim( ! empty( $tiktok_cfg[ $cfg_key ] ) ? $tiktok_cfg[ $cfg_key ] : '' );
         if ( empty( $event_name ) ) return;
 
-        $event_id = md5( uniqid( $event_name . $event_type, true ) );
+        $event_id = bin2hex( random_bytes( 16 ) );
 
         // User data — hash PII with SHA-256
         $user_data = [
@@ -49,10 +49,13 @@ class Konektor_Tiktok {
             'user_agent' => sanitize_text_field( $_SERVER['HTTP_USER_AGENT'] ?? '' ),
         ];
 
-        // TikTok cookie _ttp untuk matching
         if ( ! empty( $_COOKIE['_ttp'] ) ) {
             $user_data['ttp'] = sanitize_text_field( $_COOKIE['_ttp'] );
         }
+
+        // ttclid dari extra_data (ditangkap dari URL landing page)
+        $ttclid = $lead_data['extra_data']['ttclid'] ?? '';
+        if ( $ttclid ) $user_data['ttclid'] = $ttclid;
 
         if ( ! empty( $lead_data['email'] ) ) {
             $user_data['email'] = hash( 'sha256', strtolower( trim( $lead_data['email'] ) ) );
@@ -75,7 +78,7 @@ class Konektor_Tiktok {
         ];
 
         // Properties untuk conversion events
-        $conversion_events = [ 'Purchase', 'PlaceAnOrder', 'CompleteRegistration', 'SubmitForm', 'Subscribe' ];
+        $conversion_events = [ 'Purchase', 'PlaceAnOrder', 'CompleteRegistration', 'SubmitForm', 'Subscribe', 'AddToCart', 'Checkout' ];
         if ( in_array( $event_name, $conversion_events ) ) {
             $props = [];
             if ( ! empty( $tiktok_cfg['value'] ) ) {
@@ -146,47 +149,28 @@ class Konektor_Tiktok {
 
         $pixel_id = esc_js( trim( $cfg['pixel_id'] ) );
         $event    = esc_js( $event_name );
-        $event_id = esc_js( md5( uniqid( $event_type, true ) ) );
+        $event_id = esc_js( bin2hex( random_bytes( 8 ) ) );
+        $sess_key = esc_js( 'knk_t_' . (int) $campaign->id . '_' . $event_type );
 
         if ( $event_type === 'thanks_page' && ! empty( $cfg['value'] ) ) {
-            $value      = esc_js( $cfg['value'] );
+            $value      = esc_js( (float) $cfg['value'] );
             $currency   = esc_js( $cfg['currency'] ?? 'IDR' );
-            $track_call = "ttq.track('{$event}', { value: {$value}, currency: '{$currency}' }, { event_id: '{$event_id}' });";
+            $track_call = "ttq.track('{$event}',{value:{$value},currency:'{$currency}'},{event_id:'{$event_id}'});";
         } else {
-            $track_call = "ttq.track('{$event}', {}, { event_id: '{$event_id}' });";
+            $track_call = "ttq.track('{$event}',{},{event_id:'{$event_id}'});";
         }
 
-        // ttq.page() hanya untuk form page (page_load) — thanks page tidak boleh fire PageView
         $page_call = ( $event_type === 'page_load' ) ? "\n    ttq.page();" : '';
 
         return <<<HTML
-<!-- TikTok Pixel Code -->
+<!-- TikTok Pixel -->
 <script>
-  !function(w, d, t) {
-    w.TiktokAnalyticsObject = t;
-    var ttq = w[t] = w[t] || [];
-    ttq.methods = ["page", "track", "identify", "instances", "debug", "on", "off", "once", "ready", "alias", "group", "enableCookie", "disableCookie"], ttq.setAndDefer = function(t, e) {
-      t[e] = function() {
-        t.push([e].concat(Array.prototype.slice.call(arguments, 0)))
-      }
-    };
-    for (var i = 0; i < ttq.methods.length; i++) ttq.setAndDefer(ttq, ttq.methods[i]);
-    ttq.instance = function(t) {
-      for (var e = ttq._i[t] || [], n = 0; n < ttq.methods.length; n++) ttq.setAndDefer(e, ttq.methods[n]);
-      return e
-    }, ttq.load = function(e, n) {
-      var i = "https://analytics.tiktok.com/i18n/pixel/events.js";
-      ttq._i = ttq._i || {}, ttq._i[e] = [], ttq._i[e]._u = i, ttq._t = ttq._t || {}, ttq._t[e] = +new Date, ttq._o = ttq._o || {}, ttq._o[e] = n || {};
-      var o = document.createElement("script");
-      o.type = "text/javascript", o.async = !0, o.src = i + "?sdkid=" + e + "&lib=" + t;
-      var a = document.getElementsByTagName("script")[0];
-      a.parentNode.insertBefore(o, a)
-    };
+  !function(w,d,t){w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie","holdConsent","revokeConsent","grantConsent"],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var r="https://analytics.tiktok.com/i18n/pixel/events.js",o=n&&n.partner;ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=r,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};n=document.createElement("script");n.type="text/javascript",n.async=!0,n.src=r+"?sdkid="+e+"&lib="+t;e=document.getElementsByTagName("script")[0];e.parentNode.insertBefore(n,e)};
     ttq.load('{$pixel_id}');{$page_call}
-  }(window, document, 'ttq');
-  {$track_call}
+  }(window,document,'ttq');
+  (function(){var _k='{$sess_key}';if(sessionStorage.getItem(_k))return;sessionStorage.setItem(_k,'1');{$track_call}})();
 </script>
-<!-- End TikTok Pixel Code -->
+<!-- End TikTok Pixel -->
 
 HTML;
     }

@@ -17,40 +17,8 @@ class Konektor_Meta {
 
         $pixel_id = sanitize_text_field( $meta_cfg['pixel_id'] );
         $token    = sanitize_text_field( $meta_cfg['token'] );
-        $event_id = md5( uniqid( $event_name, true ) );
-
-        $user_data = [
-            'client_ip_address' => Konektor_Helper::get_client_ip(),
-            'client_user_agent' => sanitize_text_field( $_SERVER['HTTP_USER_AGENT'] ?? '' ),
-        ];
-
-        // Browser cookies untuk matching
-        if ( ! empty( $_COOKIE['_fbp'] ) ) {
-            $user_data['fbp'] = sanitize_text_field( $_COOKIE['_fbp'] );
-        }
-        if ( ! empty( $_COOKIE['_fbc'] ) ) {
-            $user_data['fbc'] = sanitize_text_field( $_COOKIE['_fbc'] );
-        }
-
-        // Hashed PII
-        if ( ! empty( $lead_data['email'] ) ) {
-            $user_data['em'] = [ hash( 'sha256', strtolower( trim( $lead_data['email'] ) ) ) ];
-        }
-        if ( ! empty( $lead_data['phone'] ) ) {
-            $phone = preg_replace( '/[^0-9]/', '', $lead_data['phone'] );
-            // Normalisasi: awalan 0 → 62 (format E.164 Indonesia)
-            if ( substr( $phone, 0, 1 ) === '0' ) {
-                $phone = '62' . substr( $phone, 1 );
-            }
-            $user_data['ph'] = [ hash( 'sha256', $phone ) ];
-        }
-        if ( ! empty( $lead_data['name'] ) ) {
-            $parts = explode( ' ', trim( $lead_data['name'] ), 2 );
-            $user_data['fn'] = [ hash( 'sha256', strtolower( $parts[0] ) ) ];
-            if ( ! empty( $parts[1] ) ) {
-                $user_data['ln'] = [ hash( 'sha256', strtolower( $parts[1] ) ) ];
-            }
-        }
+        $event_id  = bin2hex( random_bytes( 16 ) );
+        $user_data = self::build_user_data( $lead_data );
 
         $event_data = [
             'event_name'       => $event_name,
@@ -95,6 +63,34 @@ class Konektor_Meta {
         return $response;
     }
 
+    private static function build_user_data( $lead ) {
+        $ud = [
+            'client_ip_address' => isset( $lead['ip'] ) ? $lead['ip'] : Konektor_Helper::get_client_ip(),
+            'client_user_agent' => substr( isset( $lead['user_agent'] ) ? $lead['user_agent'] : ( $_SERVER['HTTP_USER_AGENT'] ?? '' ), 0, 512 ),
+        ];
+        if ( ! empty( $_COOKIE['_fbp'] ) ) $ud['fbp'] = sanitize_text_field( $_COOKIE['_fbp'] );
+        if ( ! empty( $_COOKIE['_fbc'] ) ) {
+            $ud['fbc'] = sanitize_text_field( $_COOKIE['_fbc'] );
+        } elseif ( ! empty( $lead['extra_data']['fbclid'] ) ) {
+            // fbclid dari extra_data (server-side only, tidak ada cookie)
+            $ud['fbc'] = 'fb.1.' . ( time() * 1000 ) . '.' . $lead['extra_data']['fbclid'];
+        }
+        if ( ! empty( $lead['email'] ) ) {
+            $ud['em'] = [ hash( 'sha256', strtolower( trim( $lead['email'] ) ) ) ];
+        }
+        if ( ! empty( $lead['phone'] ) ) {
+            $p = preg_replace( '/[^0-9]/', '', $lead['phone'] );
+            if ( substr( $p, 0, 1 ) === '0' ) $p = '62' . substr( $p, 1 );
+            $ud['ph'] = [ hash( 'sha256', $p ) ];
+        }
+        if ( ! empty( $lead['name'] ) ) {
+            $parts    = explode( ' ', trim( $lead['name'] ), 2 );
+            $ud['fn'] = [ hash( 'sha256', strtolower( $parts[0] ) ) ];
+            if ( ! empty( $parts[1] ) ) $ud['ln'] = [ hash( 'sha256', strtolower( $parts[1] ) ) ];
+        }
+        return $ud;
+    }
+
     public static function get_pixel_script( $campaign, $event_type ) {
         $cfg = self::get_config( $campaign );
         if ( empty( $cfg['pixel_id'] ) ) return '';
@@ -108,43 +104,26 @@ class Konektor_Meta {
         $event = isset( $event_map[ $event_type ] ) ? trim( $event_map[ $event_type ] ) : '';
         if ( empty( $event ) ) return '';
         $event    = esc_js( $event );
-        $event_id = esc_js( md5( uniqid( $event_type, true ) ) );
+        $event_id = esc_js( bin2hex( random_bytes( 8 ) ) );
+        $sess_key = esc_js( 'knk_m_' . (int) $campaign->id . '_' . $event_type );
+        $init_opts = ( $event_type !== 'page_load' ) ? ", { autoConfig: false }" : '';
 
         if ( $event_type === 'thanks_page' && ! empty( $cfg['value'] ) ) {
+            $value      = esc_js( (float) $cfg['value'] );
             $currency   = esc_js( $cfg['currency'] ?? 'IDR' );
-            $value      = esc_js( $cfg['value'] ?? '0' );
-            $track_call = "fbq('track', 'Purchase', { value: {$value}, currency: '{$currency}' }, { eventID: '{$event_id}' });";
+            $track_call = "fbq('track','{$event}',{value:{$value},currency:'{$currency}'},{eventID:'{$event_id}'});";
         } else {
-            $track_call = "fbq('track', '{$event}', {}, { eventID: '{$event_id}' });";
+            $track_call = "fbq('track','{$event}',{},{eventID:'{$event_id}'});";
         }
 
-        // thanks_page: matikan autoConfig agar Meta tidak auto-fire PageView saat init
-        $init_options = ( $event_type !== 'page_load' ) ? ", { autoConfig: false }" : '';
-
         return <<<HTML
-<!-- Facebook Pixel Code -->
+<!-- Meta Pixel -->
 <script>
-  !function(f, b, e, v, n, t, s) {
-    if (f.fbq) return;
-    n = f.fbq = function() {
-      n.callMethod ?
-        n.callMethod.apply(n, arguments) : n.queue.push(arguments)
-    };
-    if (!f._fbq) f._fbq = n;
-    n.push = n;
-    n.loaded = !0;
-    n.version = '2.0';
-    n.queue = [];
-    t = b.createElement(e);
-    t.async = !0;
-    t.src = v;
-    s = b.getElementsByTagName(e)[0];
-    s.parentNode.insertBefore(t, s)
-  }(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
-  fbq('init', '{$pixel_id}'{$init_options});
-  {$track_call}
+  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init','{$pixel_id}'{$init_opts});
+  (function(){var _k='{$sess_key}';if(sessionStorage.getItem(_k))return;sessionStorage.setItem(_k,'1');{$track_call}})();
 </script>
-<!-- End Facebook Pixel Code -->
+<!-- End Meta Pixel -->
 
 HTML;
     }

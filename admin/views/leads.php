@@ -13,6 +13,8 @@
   <div class="knk-card-body" style="padding:12px 16px">
     <form method="get" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
       <input type="hidden" name="page" value="konektor-leads">
+      <input type="text" name="search" value="<?php echo esc_attr( $_GET['search'] ?? '' ); ?>"
+             placeholder="Cari nama, HP, email, alamat..." class="knk-input" style="min-width:220px;">
       <select name="campaign_id" class="knk-select" style="width:auto;min-width:160px">
         <option value="">Semua Kampanye</option>
         <?php foreach ($campaigns as $c) : ?>

@@ -224,41 +224,75 @@ class Konektor_Campaign {
         $btn_label  = esc_html( $cfg['submit_label'] ?? 'Kirim Sekarang' );
 
         $schemes = [
-            'modern'   => [ '#fff',    '#2563eb', '#0f172a', '#e2e8f0', '#fff' ],
-            'classic'  => [ '#fff',    '#dc2626', '#1a1a1a', '#ccc',    '#fff' ],
-            'minimal'  => [ '#fafafa', '#111',    '#111',    '#e2e8f0', '#fff' ],
-            'card'     => [ '#f8fafc', '#2563eb', '#0f172a', '#e2e8f0', '#fff' ],
-            'gradient' => [ '#1e3a5f', '#38bdf8', '#fff',    'rgba(255,255,255,.25)', '#1e3a5f' ],
+            'modern'       => [ '#fff',    '#2563eb', '#0f172a', '#e2e8f0',              '#fff',    '#f8fafc' ],
+            'classic'      => [ '#fff',    '#dc2626', '#1a1a1a', '#d4a27a',              '#fff',    '#fff'    ],
+            'classic_flat' => [ '#b7d09a', '#FF5000', '#000000', '#ccc',                 '#ffffff', '#fff'    ],
+            'minimal'      => [ '#fafafa', '#111',    '#111',    '#e2e8f0',              '#fff',    '#fff'    ],
+            'card'         => [ '#f8fafc', '#2563eb', '#0f172a', '#bfdbfe',              '#fff',    '#fff'    ],
+            'gradient'     => [ '#1e3a5f', '#38bdf8', '#e0f2fe', 'rgba(255,255,255,.25)','#0f172a', 'rgba(255,255,255,.10)' ],
+            'rose'         => [ '#fff1f2', '#e11d48', '#0f172a', '#fecdd3',              '#fff',    '#fff'    ],
+            'forest'       => [ '#f0fdf4', '#16a34a', '#0f172a', '#bbf7d0',              '#fff',    '#fff'    ],
+            'sunset'       => [ '#fff3e0', '#ee5a24', '#2d3436', 'rgba(238,90,36,.3)',   '#fff',    '#fff'    ],
+            'ocean'        => [ '#e0f7fa', '#0077b6', '#003049', '#90e0ef',              '#fff',    '#fff'    ],
         ];
-        [ $bg, $accent, $text, $border, $btn_text ] = $schemes[ $tpl ] ?? $schemes['modern'];
-        $inp_bg = $tpl === 'gradient' ? 'rgba(255,255,255,.1)' : '#fff';
+        [ $bg, $accent, $text, $border, $btn_text, $inp_bg ] = $schemes[ $tpl ] ?? $schemes['modern'];
 
+        $is_cf     = ( $tpl === 'classic_flat' );
         $cs        = $cfg['custom_style'] ?? [];
         $bg        = $cs['color_bg']      ?: $bg;
         $accent    = $cs['color_accent']  ?: $accent;
         $text      = $cs['color_text']    ?: $text;
         $border    = $cs['color_border']  ?: $border;
         $btn_text  = $cs['color_btn_text']?: $btn_text;
+        $inp_bg    = $cs['input_bg']      ?: $inp_bg;
         $max_w     = $cs['max_width']     ?: '480px';
-        $radius    = $cs['border_radius'] ?: '12px';
+        $radius    = $cs['border_radius'] ?: ( $is_cf ? '3px' : '12px' );
         $padding   = $cs['padding']       ?: '28px 24px';
         $fsize     = $cs['font_size']     ?: '14px';
         $btn_fsize = $cs['btn_font_size'] ?: '15px';
 
+        // classic_flat: flat card (no shadow), 1px border, 36px input height, 50px button, hover darken
+        if ( $is_cf ) {
+            $inp_border  = '1px solid ' . $border;
+            $inp_radius  = '3px';
+            $inp_padding = '0 8px';
+            $inp_height  = 'height:36px;';
+            $btn_padding = 'height:50px;padding:0 20px;';
+            $btn_radius  = '3px';
+            $btn_hover   = ".knk-form-btn:hover:not(:disabled){background:#e04800}";
+            $req_color   = '#B30000';
+            $lbl_weight  = 'bold';
+            $err_css     = ".knk-form-err{display:none;padding:10px 14px;border-radius:4px;margin-bottom:12px;font-size:13px;font-weight:600;background:#ffebee;color:#c62828;border:1px solid #ef5350;text-align:center}.knk-form-err.show{display:block}";
+            $focus_css   = ".knk-form-input:focus,.knk-form-textarea:focus,.knk-form-select:focus{border-color:#81bd4b;box-shadow:0 0 0 2px rgba(129,189,75,0.2)}";
+            $card_shadow = 'none';
+        } else {
+            $inp_border  = '1.5px solid ' . $border;
+            $inp_radius  = '8px';
+            $inp_padding = '10px 12px';
+            $inp_height  = '';
+            $btn_padding = 'padding:15px;';
+            $btn_radius  = '8px';
+            $btn_hover   = ".knk-form-btn:hover:not(:disabled){opacity:.88}";
+            $req_color   = '#ef4444';
+            $lbl_weight  = '600';
+            $err_css     = ".knk-form-err{display:none;padding:10px 14px;border-radius:7px;margin-bottom:12px;font-size:13px;font-weight:600;background:#fee2e2;color:#b91c1c}.knk-form-err.show{display:block}";
+            $focus_css   = ".knk-form-input:focus,.knk-form-textarea:focus,.knk-form-select:focus{border-color:{$accent}}";
+            $card_shadow = '0 2px 16px rgba(0,0,0,.1)';
+        }
+
         $css = "<style>"
-             . ".knk-form{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:{$max_w};margin:0 auto;padding:{$padding};background:{$bg};border-radius:{$radius};box-shadow:0 2px 16px rgba(0,0,0,.1);color:{$text};box-sizing:border-box}"
+             . ".knk-form{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:{$max_w};margin:0 auto;padding:{$padding};background:{$bg};border-radius:{$radius};box-shadow:{$card_shadow};color:{$text};box-sizing:border-box}"
              . ".knk-form *{box-sizing:border-box}"
              . ".knk-form-field{margin-bottom:16px}"
-             . ".knk-form-label{display:block;font-size:14px;font-weight:600;margin-bottom:6px;color:{$text}}"
-             . ".knk-form-req{color:#ef4444;margin-left:2px}"
-             . ".knk-form-input,.knk-form-textarea,.knk-form-select{width:100%;padding:12px 14px;font-size:{$fsize};border:1.5px solid {$border};border-radius:8px;background:{$inp_bg};color:{$text};outline:none;font-family:inherit;transition:border-color .15s}"
-             . ".knk-form-input:focus,.knk-form-textarea:focus,.knk-form-select:focus{border-color:{$accent}}"
-             . ".knk-form-textarea{resize:vertical;min-height:80px}"
-             . ".knk-form-btn{width:100%;padding:15px;font-size:{$btn_fsize};font-weight:700;cursor:pointer;border:none;border-radius:8px;background:{$accent};color:{$btn_text};font-family:inherit;margin-top:4px;transition:opacity .15s}"
-             . ".knk-form-btn:hover:not(:disabled){opacity:.88}"
+             . ".knk-form-label{display:block;font-size:14px;font-weight:{$lbl_weight};margin-bottom:6px;color:{$text}}"
+             . ".knk-form-req{color:{$req_color};margin-left:2px}"
+             . ".knk-form-input,.knk-form-textarea,.knk-form-select{width:100%;{$inp_height}padding:{$inp_padding};font-size:{$fsize};border:{$inp_border};border-radius:{$inp_radius};background:{$inp_bg};color:{$text};outline:none;font-family:inherit;transition:border-color .15s}"
+             . $focus_css
+             . ".knk-form-textarea{resize:vertical;min-height:80px" . ( $is_cf ? ";height:auto;padding:8px" : "" ) . "}"
+             . ".knk-form-btn{width:100%;{$btn_padding}font-size:{$btn_fsize};font-weight:700;cursor:pointer;border:none;border-radius:{$btn_radius};background:{$accent};color:{$btn_text};font-family:inherit;margin-top:4px;transition:" . ( $is_cf ? 'background .15s' : 'opacity .15s' ) . "}"
+             . $btn_hover
              . ".knk-form-btn:disabled{opacity:.45;cursor:not-allowed}"
-             . ".knk-form-err{display:none;padding:10px 14px;border-radius:7px;margin-bottom:12px;font-size:13px;font-weight:600;background:#fee2e2;color:#b91c1c}"
-             . ".knk-form-err.show{display:block}"
+             . $err_css
              . "</style>\n";
 
         $fh = '';

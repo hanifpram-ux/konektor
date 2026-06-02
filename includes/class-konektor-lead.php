@@ -29,7 +29,9 @@ class Konektor_Lead {
             'fingerprint'    => $fingerprint,
             'is_double'      => 0,
             'source_url'     => esc_url_raw( $data['source_url'] ?? '' ),
+            'click_id'       => sanitize_text_field( $data['click_id'] ?? '' ),
             'status'         => 'new',
+            'created_at'     => current_time( 'mysql' ),
         ];
 
         $inserted = $wpdb->insert( $wpdb->prefix . 'konektor_leads', $row );
@@ -146,6 +148,53 @@ class Konektor_Lead {
         $wpdb->update( $wpdb->prefix . 'konektor_leads', [ 'is_double' => 1 ], [ 'id' => $id ] );
     }
 
+    /**
+     * Ambil operator dari lead original untuk kampanye ini.
+     * Dipakai saat duplikat masuk — operator tidak di-pick ulang dari rotator.
+     */
+    public static function get_original_operator( $campaign_id, $phone, $email, $vid_from_body = '', $ip = '', $source_url = '' ) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'konektor_leads';
+        $vid   = self::resolve_vid( $vid_from_body );
+        if ( ! $ip ) $ip = Konektor_Helper::get_client_ip();
+        $sw    = self::double_scope_where( $campaign_id, $source_url );
+
+        $operator_id = null;
+
+        // 1. Fingerprint
+        if ( $phone !== '' || $email !== '' ) {
+            $fp = Konektor_Crypto::fingerprint(
+                Konektor_Helper::sanitize_phone( $phone ),
+                sanitize_email( $email )
+            );
+            if ( $fp ) {
+                $operator_id = $wpdb->get_var( $wpdb->prepare(
+                    "SELECT operator_id FROM $table WHERE {$sw['where']} AND fingerprint = %s AND is_double = 0 ORDER BY id ASC LIMIT 1",
+                    ...array_merge( $sw['params'], [ $fp ] )
+                ) );
+            }
+        }
+
+        // 2. Cookie / VID
+        if ( ! $operator_id && $vid ) {
+            $operator_id = $wpdb->get_var( $wpdb->prepare(
+                "SELECT operator_id FROM $table WHERE {$sw['where']} AND cookie_id = %s AND is_double = 0 ORDER BY id ASC LIMIT 1",
+                ...array_merge( $sw['params'], [ $vid ] )
+            ) );
+        }
+
+        // 3. IP address
+        if ( ! $operator_id && $ip ) {
+            $operator_id = $wpdb->get_var( $wpdb->prepare(
+                "SELECT operator_id FROM $table WHERE {$sw['where']} AND ip_address = %s AND is_double = 0 ORDER BY id ASC LIMIT 1",
+                ...array_merge( $sw['params'], [ $ip ] )
+            ) );
+        }
+
+        if ( ! $operator_id ) return null;
+        return Konektor_Operator::get( (int) $operator_id );
+    }
+
     public static function update_status( $lead_id, $status, $note = '', $operator_id = null ) {
         global $wpdb;
         $allowed = [ 'new', 'contacted', 'purchased', 'cancelled', 'blocked' ];
@@ -204,6 +253,45 @@ class Konektor_Lead {
         $params[] = $offset;
 
         return $wpdb->get_results( $wpdb->prepare( $sql, ...$params ) );
+    }
+
+    /**
+     * Search leads by nama, HP, email, alamat — decrypt dulu lalu filter di PHP.
+     * Mengembalikan ['leads' => [...], 'total' => int]
+     */
+    public static function search( $args = [] ) {
+        $q       = trim( $args['search'] ?? '' );
+        $page    = max( 1, (int) ( $args['page'] ?? 1 ) );
+        $per_page = (int) ( $args['per_page'] ?? 30 );
+
+        // Ambil semua lead tanpa pagination untuk filter di PHP
+        $base_args             = $args;
+        $base_args['per_page'] = 9999;
+        $base_args['page']     = 1;
+        unset( $base_args['search'] );
+
+        $all = self::get_all( $base_args );
+        $ql  = strtolower( $q );
+
+        $matched = [];
+        foreach ( $all as $l ) {
+            $dec = self::decrypt_lead( clone $l );
+
+            $haystack = strtolower(
+                ( $dec->name    ?? '' ) . ' ' .
+                ( $dec->phone   ?? '' ) . ' ' .
+                ( $dec->email   ?? '' ) . ' ' .
+                ( $dec->address ?? '' )
+            );
+
+            if ( strpos( $haystack, $ql ) !== false ) {
+                $matched[] = $dec;
+            }
+        }
+
+        $total  = count( $matched );
+        $sliced = array_slice( $matched, ( $page - 1 ) * $per_page, $per_page );
+        return [ 'leads' => $sliced, 'total' => $total ];
     }
 
     public static function get( $id ) {

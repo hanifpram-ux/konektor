@@ -97,3 +97,19 @@ function konektor_init() {
     }
 }
 add_action( 'plugins_loaded', 'konektor_init' );
+
+// ── Daily recap cron — jam 14.00 WIB (07.00 UTC) ────────────────────────────
+function konektor_schedule_daily_recap() {
+    if ( ! wp_next_scheduled( 'konektor_daily_recap' ) ) {
+        // Schedule first run at 07:00 UTC (14:00 WIB)
+        $first = strtotime( gmdate( 'Y-m-d' ) . ' 07:00:00' );
+        if ( $first < time() ) $first += DAY_IN_SECONDS;
+        wp_schedule_event( $first, 'daily', 'konektor_daily_recap' );
+    }
+}
+add_action( 'wp', 'konektor_schedule_daily_recap' );
+add_action( 'konektor_daily_recap', [ 'Konektor_Telegram', 'send_daily_recap' ] );
+
+register_deactivation_hook( KONEKTOR_PLUGIN_FILE, function() {
+    wp_clear_scheduled_hook( 'konektor_daily_recap' );
+} );

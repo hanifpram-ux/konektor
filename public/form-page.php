@@ -148,6 +148,16 @@ $vid = isset( $_COOKIE['konektor_vid'] ) ? sanitize_text_field( $_COOKIE['konekt
       <input type="hidden" name="click_id" value="<?php echo esc_attr( $click_id ); ?>">
       <?php endif; ?>
 
+      <?php
+      // Forward fbclid + UTM params agar embed forms bisa kirim ke server walau tanpa akses URL
+      $tracking_fields = [ 'fbclid', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'utm_id' ];
+      foreach ( $tracking_fields as $tf ) :
+          $tv = isset( $_GET[ $tf ] ) ? substr( strip_tags( trim( $_GET[ $tf ] ) ), 0, 500 ) : '';
+          if ( $tv !== '' ) :
+      ?>
+      <input type="hidden" name="<?php echo esc_attr( $tf ); ?>" value="<?php echo esc_attr( $tv ); ?>">
+      <?php endif; endforeach; ?>
+
       <?php foreach ( $fields as $f ) :
         if ( empty( $f['enabled'] ) ) continue;
         $fname   = esc_attr( $f['name'] ?? '' );
@@ -218,8 +228,50 @@ $vid = isset( $_COOKIE['konektor_vid'] ) ? sanitize_text_field( $_COOKIE['konekt
 
   if (!form) return;
 
+  // Ambil label dari elemen <label> di atas input
+  function getFieldLabel(el) {
+    var field = el.closest('.knk-field');
+    if (!field) return null;
+    var lbl = field.querySelector('.knk-label');
+    return lbl ? lbl.textContent.replace('*', '').trim() : null;
+  }
+
+  function showFieldErr(el, msg) {
+    var existing = el.parentNode.querySelector('.knk-field-err');
+    if (existing) existing.remove();
+    var err = document.createElement('div');
+    err.className = 'knk-field-err';
+    err.style.cssText = 'color:#b91c1c;font-size:12px;margin-top:4px;font-weight:600;';
+    err.textContent = msg;
+    el.parentNode.appendChild(err);
+    el.style.borderColor = '#ef4444';
+    el.addEventListener('input', function() { err.remove(); el.style.borderColor = ''; }, { once: true });
+  }
+
   form.addEventListener('submit', function(e) {
     e.preventDefault();
+
+    // Client-side validation sebelum kirim
+    var phoneEl = form.querySelector('input[name="phone"]');
+    var emailEl = form.querySelector('input[name="email"]');
+
+    if (phoneEl && phoneEl.value.trim() !== '') {
+      var digits = phoneEl.value.replace(/\D/g, '');
+      if (digits.length < 10) {
+        phoneEl.focus();
+        showFieldErr(phoneEl, 'Masukkan ' + (getFieldLabel(phoneEl) || 'No HP') + ' yang valid (min. 10 digit).');
+        return;
+      }
+    }
+
+    if (emailEl && emailEl.value.trim() !== '') {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailEl.value.trim())) {
+        emailEl.focus();
+        showFieldErr(emailEl, 'Masukkan ' + (getFieldLabel(emailEl) || 'Email') + ' yang valid (contoh: nama@domain.com).');
+        return;
+      }
+    }
+
     btnText.classList.add('knk-hidden');
     btnLoad.classList.remove('knk-hidden');
     alertEl.className = 'knk-alert knk-hidden';

@@ -83,6 +83,53 @@ class Konektor_Helper {
     }
 
     /**
+     * Parse fbclid, ttclid, kwai_click_id, dan UTM params dari URL atau $_GET.
+     * Side-effect: set cookie _fbc dari fbclid untuk Meta CAPI dedup.
+     *
+     * @param string|null $url  URL lengkap untuk di-parse (null = pakai $_GET)
+     * @return array
+     */
+    public static function parse_tracking_params( $url = null ) {
+        if ( $url !== null ) {
+            $qs     = wp_parse_url( $url, PHP_URL_QUERY );
+            $params = [];
+            if ( $qs ) wp_parse_str( $qs, $params );
+        } else {
+            $params = $_GET;
+        }
+
+        $result = [];
+
+        // Meta — fbclid + set _fbc cookie
+        $fbclid = isset( $params['fbclid'] ) ? substr( trim( $params['fbclid'] ), 0, 500 ) : '';
+        if ( $fbclid !== '' ) {
+            $result['fbclid'] = $fbclid;
+            $fbc = 'fb.1.' . ( time() * 1000 ) . '.' . $fbclid;
+            if ( empty( $_COOKIE['_fbc'] ) ) {
+                setcookie( '_fbc', $fbc, time() + 7776000, '/', '', is_ssl(), false );
+                $_COOKIE['_fbc'] = $fbc;
+            }
+        }
+
+        // TikTok
+        $ttclid = isset( $params['ttclid'] ) ? substr( trim( $params['ttclid'] ), 0, 500 ) : '';
+        if ( $ttclid !== '' ) $result['ttclid'] = $ttclid;
+
+        // Snack/Kwai
+        $kwai = isset( $params['kwai_click_id'] ) ? substr( trim( $params['kwai_click_id'] ), 0, 500 )
+              : ( isset( $params['click_id'] )    ? substr( trim( $params['click_id'] ),      0, 500 ) : '' );
+        if ( $kwai !== '' ) $result['kwai_click_id'] = $kwai;
+
+        // UTM params
+        foreach ( [ 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'utm_id' ] as $k ) {
+            $v = isset( $params[ $k ] ) ? substr( strip_tags( trim( $params[ $k ] ) ), 0, 200 ) : '';
+            if ( $v !== '' ) $result[ $k ] = $v;
+        }
+
+        return $result;
+    }
+
+    /**
      * Fire server-side CAPI events when a lead status changes.
      * Reads status_events mapping from campaign pixel_config.
      * Supports per-platform event names: { "contacted": { "meta": "Contact", "tiktok": "Contact" } }

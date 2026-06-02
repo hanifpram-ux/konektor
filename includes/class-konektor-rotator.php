@@ -10,6 +10,12 @@ class Konektor_Rotator {
     public static function pick( $campaign_id ) {
         global $wpdb;
 
+        $campaign_id = (int) $campaign_id;
+
+        $campaign  = Konektor_Campaign::get( $campaign_id );
+        $form_cfg  = $campaign ? Konektor_Campaign::get_form_config( $campaign ) : [];
+        $dist_mode = $form_cfg['_dist_mode'] ?? 'proportional';
+
         $rows = $wpdb->get_results( $wpdb->prepare(
             "SELECT o.*, co.weight
              FROM {$wpdb->prefix}konektor_operators o
@@ -21,24 +27,46 @@ class Konektor_Rotator {
 
         if ( empty( $rows ) ) return null;
 
-        // Filter by on-duty
-        $available = array_filter( $rows, function( $o ) { return Konektor_Operator::is_on_duty( $o ); } );
-        if ( empty( $available ) ) $available = $rows; // fallback to all if none on duty
+        $available = array_values( array_filter( $rows, function( $o ) {
+            return Konektor_Operator::is_on_duty( $o );
+        } ) );
+        if ( empty( $available ) ) $available = array_values( $rows );
 
-        // Build weighted pool
-        $pool = [];
-        foreach ( $available as $op ) {
-            $w = max( 1, min( 10, (int) $op->weight ) );
+        return self::swrr( $available, $campaign_id, $dist_mode === 'roundrobin' );
+    }
+
+    /**
+     * Weighted Round-Robin berbasis lead count operator yang available.
+     *
+     * Hitung total lead dari operator-operator yang aktif saja (bukan semua),
+     * modulo total slot siklus → tentukan giliran berikutnya.
+     */
+    private static function swrr( array $ops, $campaign_id, $force_equal = false ) {
+        global $wpdb;
+
+        if ( count( $ops ) === 1 ) return $ops[0];
+
+        $op_ids = array_map( function( $o ) { return (int) $o->id; }, $ops );
+
+        // Bangun IN clause manual — aman karena semua sudah di-cast ke int
+        $in_clause = implode( ', ', $op_ids );
+
+        $total_leads = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}konektor_leads
+             WHERE campaign_id = %d AND operator_id IN ({$in_clause})",
+            $campaign_id
+        ) );
+
+        $cycle = [];
+        foreach ( $ops as $op ) {
+            $w = $force_equal ? 1 : max( 1, min( 10, (int) $op->weight ) );
             for ( $i = 0; $i < $w; $i++ ) {
-                $pool[] = $op;
+                $cycle[] = $op;
             }
         }
 
-        // Weighted random pick
-        $idx      = array_rand( $pool );
-        $selected = $pool[ $idx ];
-
-        return $selected;
+        $pos = $total_leads % count( $cycle );
+        return $cycle[ $pos ];
     }
 
     /**

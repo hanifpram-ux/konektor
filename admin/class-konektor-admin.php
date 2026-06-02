@@ -102,17 +102,25 @@ class Konektor_Admin {
         $campaign_id = (int) ( $_GET['campaign_id'] ?? 0 );
         $operator_id = (int) ( $_GET['operator_id'] ?? 0 );
         $status      = sanitize_text_field( $_GET['status'] ?? '' );
+        $search      = sanitize_text_field( $_GET['search'] ?? '' );
         $page        = max( 1, (int) ( $_GET['paged'] ?? 1 ) );
         $campaigns   = Konektor_Campaign::get_all();
         $operators   = Konektor_Operator::get_all();
 
-        $args = [ 'page' => $page ];
+        $args = [ 'page' => $page, 'per_page' => 30 ];
         if ( $campaign_id ) $args['campaign_id'] = $campaign_id;
         if ( $operator_id ) $args['operator_id'] = $operator_id;
         if ( $status )      $args['status']       = $status;
 
-        $leads = Konektor_Lead::get_all( $args );
-        $total = Konektor_Lead::count( $args );
+        if ( $search !== '' ) {
+            $args['search'] = $search;
+            $result = Konektor_Lead::search( $args );
+            $leads  = $result['leads'];
+            $total  = $result['total'];
+        } else {
+            $leads = Konektor_Lead::get_all( $args );
+            $total = Konektor_Lead::count( $args );
+        }
 
         include KONEKTOR_PLUGIN_DIR . 'admin/views/leads.php';
     }
