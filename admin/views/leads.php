@@ -8,6 +8,18 @@
   </div>
 </div>
 
+<!-- Info Telegram Reaction -->
+<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#e8f4fd;border:1px solid #b3d9f7;border-radius:6px;margin-bottom:16px;font-size:12px;color:#1a5276;">
+  <i class="fa-brands fa-telegram" style="font-size:16px;color:#2980b9;flex-shrink:0;"></i>
+  <span>
+    <strong>Telegram Bot:</strong> Operator CS bisa update status lead via <strong>reaction</strong> pada pesan notifikasi —
+    <strong>❤️ Love</strong> = Dihubungi &nbsp;·&nbsp;
+    <strong>👍 Like</strong> = Beli &nbsp;·&nbsp;
+    <strong>👎 Dislike</strong> = Batal.
+    Pastikan klik <strong>Daftarkan Webhook</strong> di <a href="<?php echo admin_url('admin.php?page=konektor-settings'); ?>" style="color:#2980b9;font-weight:600;">Pengaturan → Telegram Bot</a> agar reaction aktif.
+  </span>
+</div>
+
 <!-- Filter Bar -->
 <div class="knk-card" style="margin-bottom:16px">
   <div class="knk-card-body" style="padding:12px 16px">

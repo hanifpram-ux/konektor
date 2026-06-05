@@ -22,6 +22,7 @@ class Konektor_Admin {
         add_action( 'wp_ajax_konektor_admin_gen_token',       [ __CLASS__, 'ajax_gen_token' ] );
         add_action( 'wp_ajax_konektor_admin_test_pixel',      [ __CLASS__, 'ajax_test_pixel' ] );
         add_action( 'wp_ajax_konektor_admin_debug_campaign',   [ __CLASS__, 'ajax_debug_campaign' ] );
+        add_action( 'wp_ajax_konektor_register_webhook',       [ __CLASS__, 'ajax_register_webhook' ] );
     }
 
     public static function register_menu() {
@@ -311,6 +312,32 @@ class Konektor_Admin {
         self::verify_nonce();
         Konektor_Lead::delete( (int) ( $_POST['id'] ?? 0 ) );
         wp_send_json_success();
+    }
+
+    public static function ajax_register_webhook() {
+        self::verify_nonce();
+        $token = Konektor_Helper::get_setting( 'telegram_bot_token', '' );
+        if ( ! $token ) {
+            wp_send_json_error( [ 'message' => 'Bot Token belum diisi di pengaturan.' ] );
+        }
+        $webhook_url = get_rest_url( null, 'konektor/v1/telegram-webhook' );
+        $response    = wp_remote_post( "https://api.telegram.org/bot{$token}/setWebhook", [
+            'body'    => wp_json_encode( [
+                'url'             => $webhook_url,
+                'allowed_updates' => [ 'message', 'callback_query', 'message_reaction' ],
+            ] ),
+            'headers' => [ 'Content-Type' => 'application/json' ],
+            'timeout' => 15,
+        ] );
+        if ( is_wp_error( $response ) ) {
+            wp_send_json_error( [ 'message' => $response->get_error_message() ] );
+        }
+        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( ! empty( $body['ok'] ) ) {
+            wp_send_json_success( [ 'message' => 'Webhook berhasil didaftarkan dengan message_reaction aktif.' ] );
+        } else {
+            wp_send_json_error( [ 'message' => $body['description'] ?? 'Gagal mendaftarkan webhook.' ] );
+        }
     }
 
     public static function ajax_gen_token() {

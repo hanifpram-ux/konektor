@@ -84,10 +84,10 @@ class Konektor_Lead {
     /**
      * Check duplicate for form leads: fingerprint → cookie → IP.
      */
-    public static function check_double( $campaign_id, $phone, $email, $vid_from_body = '', $source_url = '' ) {
+    public static function check_double( $campaign_id, $phone, $email, $vid_from_body = '', $ip = '', $source_url = '' ) {
         global $wpdb;
         $table = $wpdb->prefix . 'konektor_leads';
-        $ip    = Konektor_Helper::get_client_ip();
+        $ip    = $ip ?: Konektor_Helper::get_client_ip();
         $vid   = self::resolve_vid( $vid_from_body );
         $sw    = self::double_scope_where( $campaign_id, $source_url );
 
@@ -203,6 +203,7 @@ class Konektor_Lead {
         $data = [
             'status'      => $status,
             'status_note' => sanitize_textarea_field( $note ),
+            'updated_at'  => current_time( 'mysql' ),
         ];
         $where = [ 'id' => (int) $lead_id ];
 
@@ -327,34 +328,57 @@ class Konektor_Lead {
     }
 
     public static function export_csv( $args = [] ) {
-        $leads = self::get_all( array_merge( $args, [ 'per_page' => 99999 ] ) );
-        $rows  = [];
-        $rows[] = [ 'ID', 'Kampanye', 'Operator', 'Nama', 'Email', 'No HP', 'Alamat', 'Jumlah', 'Pesan', 'Status', 'Double', 'IP', 'Tanggal' ];
-
         global $wpdb;
+        $leads     = self::get_all( array_merge( $args, [ 'per_page' => 99999 ] ) );
+        $rows      = [];
         $campaigns = [];
         $operators = [];
+        $is_link   = ! empty( $args['camp_type'] ) && $args['camp_type'] === 'wa_link';
 
-        foreach ( $leads as $lead ) {
-            $l = self::decrypt_lead( $lead );
-            if ( ! isset( $campaigns[ $l->campaign_id ] ) ) {
-                $c = $wpdb->get_var( $wpdb->prepare( "SELECT name FROM {$wpdb->prefix}konektor_campaigns WHERE id=%d", $l->campaign_id ) );
-                $campaigns[ $l->campaign_id ] = $c;
+        if ( $is_link ) {
+            $rows[] = [ 'ID', 'Kampanye', 'Operator', 'IP Address', 'Perangkat', 'Browser', 'Cookie ID', 'Source URL', 'Referrer', 'Status', 'Waktu Klik' ];
+            foreach ( $leads as $lead ) {
+                if ( ! isset( $campaigns[ $lead->campaign_id ] ) ) {
+                    $campaigns[ $lead->campaign_id ] = $wpdb->get_var( $wpdb->prepare( "SELECT name FROM {$wpdb->prefix}konektor_campaigns WHERE id=%d", $lead->campaign_id ) );
+                }
+                $ua  = $lead->user_agent ?? '';
+                $dev = preg_match( '/Mobile|Android|iPhone|iPad/i', $ua ) ? 'Mobile' : 'Desktop';
+                $br  = 'Browser';
+                if      ( preg_match( '/Edg\/(\d+)/i',     $ua, $m ) ) $br = 'Edge '   . $m[1];
+                elseif  ( preg_match( '/Chrome\/(\d+)/i',  $ua, $m ) ) $br = 'Chrome ' . $m[1];
+                elseif  ( preg_match( '/Firefox\/(\d+)/i', $ua, $m ) ) $br = 'Firefox '. $m[1];
+                elseif  ( preg_match( '/Safari\//i',        $ua )     ) $br = 'Safari';
+                $rows[] = [
+                    $lead->id,
+                    $campaigns[ $lead->campaign_id ] ?? '',
+                    $lead->operator_id ? ( $operators[ $lead->operator_id ] ?? $wpdb->get_var( $wpdb->prepare( "SELECT name FROM {$wpdb->prefix}konektor_operators WHERE id=%d", $lead->operator_id ) ) ) : '',
+                    $lead->ip_address, $dev, $br,
+                    $lead->cookie_id   ?? '',
+                    $lead->source_url  ?? '',
+                    $lead->referrer    ?? '',
+                    $lead->status, $lead->created_at,
+                ];
             }
-            if ( $l->operator_id && ! isset( $operators[ $l->operator_id ] ) ) {
-                $o = $wpdb->get_var( $wpdb->prepare( "SELECT name FROM {$wpdb->prefix}konektor_operators WHERE id=%d", $l->operator_id ) );
-                $operators[ $l->operator_id ] = $o;
+        } else {
+            $rows[] = [ 'ID', 'Kampanye', 'Operator', 'Nama', 'Email', 'No HP', 'Alamat', 'Jumlah', 'Pesan', 'Status', 'Duplikat', 'IP', 'User Agent', 'Tanggal' ];
+            foreach ( $leads as $lead ) {
+                $l = self::decrypt_lead( $lead );
+                if ( ! isset( $campaigns[ $l->campaign_id ] ) ) {
+                    $campaigns[ $l->campaign_id ] = $wpdb->get_var( $wpdb->prepare( "SELECT name FROM {$wpdb->prefix}konektor_campaigns WHERE id=%d", $l->campaign_id ) );
+                }
+                if ( $l->operator_id && ! isset( $operators[ $l->operator_id ] ) ) {
+                    $operators[ $l->operator_id ] = $wpdb->get_var( $wpdb->prepare( "SELECT name FROM {$wpdb->prefix}konektor_operators WHERE id=%d", $l->operator_id ) );
+                }
+                $rows[] = [
+                    $l->id,
+                    $campaigns[ $l->campaign_id ] ?? '',
+                    $l->operator_id ? ( $operators[ $l->operator_id ] ?? '' ) : '',
+                    $l->name, $l->email, $l->phone, $l->address,
+                    $l->quantity, $l->custom_message,
+                    $l->status, $l->is_double ? 'Ya' : 'Tidak',
+                    $l->ip_address, $l->user_agent ?? '', $l->created_at,
+                ];
             }
-
-            $rows[] = [
-                $l->id,
-                $campaigns[ $l->campaign_id ] ?? '',
-                $l->operator_id ? ( $operators[ $l->operator_id ] ?? '' ) : '',
-                $l->name, $l->email, $l->phone, $l->address,
-                $l->quantity, $l->custom_message,
-                $l->status, $l->is_double ? 'Ya' : 'Tidak',
-                $l->ip_address, $l->created_at,
-            ];
         }
         return $rows;
     }

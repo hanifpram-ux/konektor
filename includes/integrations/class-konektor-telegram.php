@@ -132,19 +132,27 @@ class Konektor_Telegram {
 
         $buttons = [];
 
-        // Tombol Follow-Up + Dihubungi dalam satu baris
+        // Hanya tombol Follow-Up (status diatur via reaction emoji di Telegram)
         if ( ! empty( $decrypt->phone ) ) {
             $followup_url = Konektor_Rotator::get_followup_url( $campaign, $decrypt, $operator );
-            $row = [];
             if ( $followup_url ) {
-                $row[] = [ 'text' => '📲 Follow-Up Customer', 'url' => $followup_url ];
+                $buttons[] = [ [ 'text' => '📲 Follow-Up Customer', 'url' => $followup_url ] ];
             }
-            $row[]    = [ 'text' => '📞 Dihubungi', 'callback_data' => 'status:contacted:' . $lead->id ];
-            $buttons[] = $row;
         }
 
         $reply_markup = ! empty( $buttons ) ? [ 'inline_keyboard' => $buttons ] : null;
-        self::send_message( $operator->telegram_chat_id, $text, $reply_markup );
+        $response     = self::send_message( $operator->telegram_chat_id, $text, $reply_markup );
+
+        // Simpan mapping message_id → lead_id agar reaction bisa identify lead
+        if ( $response && ! is_wp_error( $response ) ) {
+            $body  = wp_remote_retrieve_body( $response );
+            $data  = $body ? json_decode( $body, true ) : null;
+            $msg_id = $data['result']['message_id'] ?? null;
+            if ( $msg_id ) {
+                $map_key = 'tg_msg_' . $operator->telegram_chat_id . '_' . $msg_id;
+                Konektor_Helper::set_setting( $map_key, (string) $lead->id );
+            }
+        }
     }
 
     /**
@@ -196,7 +204,7 @@ class Konektor_Telegram {
                 if ( $camp )  $text .= "\n    📋 {$camp}";
                 $text .= "\n";
 
-                $short_name = mb_substr( $name ?: "Lead {$no}", 0, 15 );
+                $short_name = substr( $name ?: "Lead {$no}", 0, 15 );
                 $buttons[]  = [
                     [ 'text' => "✅ {$short_name} - Beli",  'callback_data' => 'status:purchased:'  . $lead->id ],
                     [ 'text' => "❌ {$short_name} - Batal", 'callback_data' => 'status:cancelled:' . $lead->id ],
@@ -287,6 +295,64 @@ class Konektor_Telegram {
                         }
                     } else {
                         self::answer_callback_query( $callback_id, '❌ Lead tidak ditemukan atau bukan milik Anda.' );
+                    }
+                }
+            }
+            return;
+        }
+
+        // Handle message_reaction: ❤️=contacted, 👍=purchased, 👎=cancelled
+        if ( ! empty( $data['message_reaction'] ) ) {
+            $reaction      = $data['message_reaction'];
+            $react_user_id = $reaction['user']['id'] ?? null;
+            $chat_id       = $reaction['chat']['id'] ?? $react_user_id;
+            $msg_id        = $reaction['message_id'] ?? null;
+            $new_reactions = $reaction['new_reaction'] ?? [];
+
+            if ( $chat_id && $msg_id && ! empty( $new_reactions ) ) {
+                $operator = $wpdb->get_row( $wpdb->prepare(
+                    "SELECT * FROM {$wpdb->prefix}konektor_operators WHERE telegram_chat_id = %s LIMIT 1",
+                    (string) $chat_id
+                ) );
+
+                // Fallback via user id
+                if ( ! $operator && $react_user_id && $react_user_id != $chat_id ) {
+                    $operator = $wpdb->get_row( $wpdb->prepare(
+                        "SELECT * FROM {$wpdb->prefix}konektor_operators WHERE telegram_chat_id = %s LIMIT 1",
+                        (string) $react_user_id
+                    ) );
+                }
+
+                if ( $operator ) {
+                    $raw_emoji = $new_reactions[0]['emoji'] ?? '';
+                    // Normalisasi: hapus variation selector U+FE0F agar ❤️ == ❤
+                    $emoji = preg_replace( '/\x{FE0F}/u', '', $raw_emoji );
+
+                    $status_map = [
+                        "\u{2764}"         => 'contacted', // ❤ tanpa VS
+                        "\u{2764}\u{FE0F}" => 'contacted', // ❤️ dengan VS
+                        "\u{1F44D}"        => 'purchased', // 👍
+                        "\u{1F44E}"        => 'cancelled', // 👎
+                    ];
+
+                    $new_status = $status_map[ $emoji ] ?? ( $status_map[ $raw_emoji ] ?? null );
+
+                    if ( $new_status ) {
+                        $map_key = 'tg_msg_' . $chat_id . '_' . $msg_id;
+                        $lead_id = (int) Konektor_Helper::get_setting( $map_key, '0' );
+
+                        // Fallback dengan user id
+                        if ( ! $lead_id && $react_user_id && $react_user_id != $chat_id ) {
+                            $map_key = 'tg_msg_' . $react_user_id . '_' . $msg_id;
+                            $lead_id = (int) Konektor_Helper::get_setting( $map_key, '0' );
+                        }
+
+                        if ( $lead_id ) {
+                            $lead = Konektor_Lead::get( $lead_id );
+                            if ( $lead && (int) $lead->operator_id === (int) $operator->id && $lead->status !== $new_status ) {
+                                Konektor_Lead::update_status( $lead_id, $new_status, 'Update via Telegram reaction', $operator->id );
+                            }
+                        }
                     }
                 }
             }

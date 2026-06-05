@@ -61,6 +61,12 @@ class Konektor_API {
     public static function handle_form_submit() {
         check_ajax_referer( 'konektor_nonce', 'nonce' );
 
+        // Rate limit: 20 submit per IP per menit
+        $ip = Konektor_Helper::get_client_ip();
+        if ( ! Konektor_Helper::rate_limit( 'submit_' . $ip, 20, 60 ) ) {
+            wp_send_json_error( [ 'message' => 'Terlalu banyak permintaan. Coba lagi sebentar.' ], 429 );
+        }
+
         $campaign_id = (int) ( $_POST['campaign_id'] ?? 0 );
         $campaign    = Konektor_Campaign::get( $campaign_id );
 

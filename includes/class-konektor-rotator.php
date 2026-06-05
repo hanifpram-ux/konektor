@@ -46,9 +46,10 @@ class Konektor_Rotator {
 
         if ( count( $ops ) === 1 ) return $ops[0];
 
-        $op_ids = array_map( function( $o ) { return (int) $o->id; }, $ops );
-
-        // Bangun IN clause manual — aman karena semua sudah di-cast ke int
+        // Cast ke int secara eksplisit — aman untuk interpolasi langsung di SQL
+        $op_ids    = array_map( function( $o ) { return (int) $o->id; }, $ops );
+        $op_ids    = array_filter( $op_ids, function( $id ) { return $id > 0; } );
+        if ( empty( $op_ids ) ) return $ops[0];
         $in_clause = implode( ', ', $op_ids );
 
         $total_leads = (int) $wpdb->get_var( $wpdb->prepare(

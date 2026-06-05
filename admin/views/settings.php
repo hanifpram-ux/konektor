@@ -59,8 +59,38 @@
             Webhook URL: <code><?php echo esc_url(get_rest_url(null, 'konektor/v1/telegram-webhook')); ?></code>
           </div>
         </div>
+        <div class="knk-field" style="margin-top:10px;">
+          <button type="button" id="knk-register-webhook" class="knk-btn knk-btn-ghost" style="font-size:12px;">
+            <i class="fa-brands fa-telegram"></i> Daftarkan Webhook (+ Aktifkan Reaction)
+          </button>
+          <div id="knk-webhook-result" style="margin-top:6px;font-size:12px;"></div>
+          <div class="knk-hint" style="margin-top:6px;">
+            Klik tombol ini setelah simpan token. Wajib dijalankan agar fitur <strong>reaction</strong> aktif.<br>
+            <strong>❤️ Love</strong> = Dihubungi &nbsp;·&nbsp; <strong>👍 Like</strong> = Beli &nbsp;·&nbsp; <strong>👎 Dislike</strong> = Batal
+          </div>
+        </div>
       </div>
     </div>
+    <script>
+    document.getElementById('knk-register-webhook').addEventListener('click', function() {
+      var btn = this;
+      var res = document.getElementById('knk-webhook-result');
+      btn.disabled = true;
+      res.textContent = 'Mendaftarkan...';
+      fetch(ajaxurl, {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded'},
+        body: 'action=konektor_register_webhook&nonce=<?php echo wp_create_nonce('konektor_admin_nonce'); ?>'
+      })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        res.textContent = d.success ? '✅ ' + (d.data.message || 'Webhook berhasil didaftarkan.') : '❌ ' + (d.data.message || 'Gagal.');
+        res.style.color = d.success ? 'green' : 'red';
+        btn.disabled = false;
+      })
+      .catch(function(){ res.textContent = '❌ Koneksi gagal.'; res.style.color='red'; btn.disabled=false; });
+    });
+    </script>
 
     <!-- Keamanan -->
     <div class="knk-card">
