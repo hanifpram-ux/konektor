@@ -171,14 +171,18 @@ class Konektor_API {
         $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
         $snack_cfg  = Konektor_Snack::get_config( $campaign );
 
+        $capi_meta_fired   = false;
+        $capi_tiktok_fired = false;
         if ( ! $is_double ) {
-            if ( ! empty( $meta_cfg['pixel_id'] ) && ! empty( $meta_cfg['token'] ) ) {
+            if ( ! empty( $meta_cfg['pixel_id'] ) && ! empty( $meta_cfg['token'] ) && ! self::use_browser_pixel( $meta_cfg, 'token' ) ) {
                 Konektor_Meta::send_capi_event( $meta_cfg['form_submit_event'] ?? '', $lead_data, $meta_cfg );
+                $capi_meta_fired = true;
             }
-            if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
+            if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) && ! self::use_browser_pixel( $tiktok_cfg, 'access_token' ) ) {
                 Konektor_Tiktok::send_event( 'form_submit', $lead_data, $tiktok_cfg );
+                $capi_tiktok_fired = true;
             }
-            if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
+            if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) && ! self::use_browser_pixel( $snack_cfg, 'access_token' ) ) {
                 Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'form_submit' ), $lead_data, $snack_cfg );
             }
         }
@@ -221,6 +225,8 @@ class Konektor_API {
             'redirect_type' => $thanks_cfg['redirect_type'] ?? 'none',
             'delay'         => (int) ( $thanks_cfg['delay_redirect'] ?? 3 ),
             'lead_id'       => $lead_id,
+            'capi_meta'     => $capi_meta_fired,
+            'capi_tiktok'   => $capi_tiktok_fired,
         ] );
     }
 
@@ -289,21 +295,27 @@ class Konektor_API {
 
         if ( ! $is_repeat ) {
             $meta_cfg = Konektor_Meta::get_config( $campaign );
-            if ( ! empty( $meta_cfg['token'] ) ) {
+            if ( ! empty( $meta_cfg['token'] ) && ! self::use_browser_pixel( $meta_cfg, 'token' ) ) {
                 Konektor_Meta::send_capi_event( $meta_cfg['form_submit_event'] ?? '', $lead_data, $meta_cfg );
             }
             $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
-            if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
+            if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) && ! self::use_browser_pixel( $tiktok_cfg, 'access_token' ) ) {
                 Konektor_Tiktok::send_event( 'form_submit', $lead_data, $tiktok_cfg );
             }
             $snack_cfg = Konektor_Snack::get_config( $campaign );
-            if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
+            if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) && ! self::use_browser_pixel( $snack_cfg, 'access_token' ) ) {
                 Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'form_submit' ), $lead_data, $snack_cfg );
             }
         }
 
         $url = Konektor_Rotator::get_redirect_url( $operator, $campaign, [ 'product_name' => $campaign->product_name, 'operator_name' => $operator->name ] );
         wp_send_json_success( [ 'url' => $url ] );
+    }
+
+    private static function use_browser_pixel( array $cfg, $token_key ) {
+        $mode = $cfg['pixel_mode'] ?? 'capi';
+        if ( $mode === 'pixel' ) return true;
+        return empty( $cfg[ $token_key ] );
     }
 
     public static function cs_get_leads( $request ) {

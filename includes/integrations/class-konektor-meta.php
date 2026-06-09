@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 class Konektor_Meta {
 
     public static function get_config( $campaign ) {
-        $pixel = $campaign->pixel_config ? json_decode( $campaign->pixel_config, true ) : [];
+        $pixel = Konektor_Campaign::decode_json_field( $campaign->pixel_config ?? null );
         $cfg = $pixel['meta'] ?? [];
         // Backward compatibility: if 'enabled' key doesn't exist, treat as enabled (old campaigns)
         if ( array_key_exists( 'enabled', $cfg ) && empty( $cfg['enabled'] ) ) return [];

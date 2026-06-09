@@ -63,6 +63,36 @@ class Konektor_Campaign {
         return $slug;
     }
 
+    /**
+     * Safely JSON-encode a field that may already be a JSON string (e.g. from a DB row cast to array).
+     * Prevents double-encoding when duplicating campaigns.
+     */
+    private static function encode_json_field( $value ) {
+        if ( empty( $value ) ) return null;
+        if ( is_string( $value ) ) {
+            $decoded = json_decode( $value, true );
+            if ( json_last_error() === JSON_ERROR_NONE ) $value = $decoded;
+        }
+        return wp_json_encode( $value );
+    }
+
+    /**
+     * Decode a JSON field, handling double-encoded strings (from old duplicate bug).
+     * Always returns an array.
+     */
+    public static function decode_json_field( $value ) {
+        if ( empty( $value ) ) return [];
+        $decoded = json_decode( $value, true );
+        if ( json_last_error() !== JSON_ERROR_NONE ) return [];
+        // Handle double-encoded: result is still a string
+        if ( is_string( $decoded ) ) {
+            $decoded2 = json_decode( $decoded, true );
+            if ( json_last_error() === JSON_ERROR_NONE && is_array( $decoded2 ) ) return $decoded2;
+            return [];
+        }
+        return is_array( $decoded ) ? $decoded : [];
+    }
+
     public static function save( $data, $id = 0 ) {
         global $wpdb;
         $table = $wpdb->prefix . 'konektor_campaigns';
@@ -71,19 +101,32 @@ class Konektor_Campaign {
         $slug = ! empty( $data['slug'] ) ? sanitize_title( $data['slug'] ) : self::generate_unique_slug( $data['name'], $id );
         if ( empty( $slug ) ) $slug = self::generate_unique_slug( $data['name'], $id );
 
+        // operators may come as {mode, operators:[]} or plain array
+        $op_list   = null;
+        $dist_mode = 'proportional';
+        if ( isset( $data['operators'] ) ) {
+            $raw = $data['operators'];
+            if ( is_array( $raw ) && isset( $raw['operators'] ) ) {
+                $dist_mode = $raw['mode'] ?? 'proportional';
+                $op_list   = is_array( $raw['operators'] ) ? $raw['operators'] : [];
+            } elseif ( is_array( $raw ) ) {
+                $op_list = $raw;
+            }
+        }
+
         $row = [
             'name'                => sanitize_text_field( $data['name'] ),
             'slug'                => $slug,
-            'type'                => in_array( $data['type'], ['form','wa_link','link'] ) ? $data['type'] : 'form',
+            'type'                => in_array( $data['type'] ?? 'form', ['form','wa_link','link'] ) ? $data['type'] : 'form',
             'store_name'          => sanitize_text_field( $data['store_name'] ?? '' ),
             'product_name'        => sanitize_text_field( $data['product_name'] ?? '' ),
-            'form_config'         => ! empty( $data['form_config'] ) ? wp_json_encode( $data['form_config'] ) : null,
-            'thanks_page_config'  => ! empty( $data['thanks_page_config'] ) ? wp_json_encode( $data['thanks_page_config'] ) : null,
-            'pixel_config'        => ! empty( $data['pixel_config'] ) ? wp_json_encode( $data['pixel_config'] ) : null,
+            'form_config'         => self::encode_json_field( $data['form_config'] ?? null ),
+            'thanks_page_config'  => self::encode_json_field( $data['thanks_page_config'] ?? null ),
+            'pixel_config'        => self::encode_json_field( $data['pixel_config'] ?? null ),
             'double_lead_enabled' => ! empty( $data['double_lead_enabled'] ) ? 1 : 0,
             'double_lead_message' => sanitize_textarea_field( $data['double_lead_message'] ?? '' ),
             'followup_message'    => sanitize_textarea_field( $data['followup_message'] ?? '' ),
-            'allowed_domains'     => ! empty( $data['allowed_domains'] ) ? wp_json_encode( $data['allowed_domains'] ) : '[]',
+            'allowed_domains'     => self::encode_json_field( $data['allowed_domains'] ?? null ) ?: '[]',
             'block_enabled'       => ! empty( $data['block_enabled'] ) ? 1 : 0,
             'block_message'       => sanitize_textarea_field( $data['block_message'] ?? '' ),
             'status'              => in_array( $data['status'] ?? 'active', ['active','inactive'] ) ? $data['status'] : 'active',
@@ -97,13 +140,15 @@ class Konektor_Campaign {
         }
 
         // Update operator assignments
-        if ( isset( $data['operators'] ) && is_array( $data['operators'] ) ) {
+        if ( $op_list !== null ) {
             $wpdb->delete( $wpdb->prefix . 'konektor_campaign_operators', [ 'campaign_id' => $id ] );
-            foreach ( $data['operators'] as $op ) {
+            foreach ( $op_list as $op ) {
+                // In roundrobin mode all weights equal 1; proportional uses actual weight
+                $w = ( $dist_mode === 'roundrobin' ) ? 1 : max( 1, min( 10, (int) ( $op['weight'] ?? 1 ) ) );
                 $wpdb->insert( $wpdb->prefix . 'konektor_campaign_operators', [
                     'campaign_id' => $id,
                     'operator_id' => (int) $op['id'],
-                    'weight'      => max( 1, min( 10, (int) ( $op['weight'] ?? 1 ) ) ),
+                    'weight'      => $w,
                 ] );
             }
         }
@@ -137,6 +182,12 @@ class Konektor_Campaign {
      * Buat pixel ping JS dengan dedup — kalau pixel ID sama sudah di-fire oleh embed lain
      * di halaman yang sama, skip. Key berdasarkan kombinasi pixel ID semua platform.
      */
+    private static function use_browser_pixel( array $cfg, $token_key ) {
+        $mode = $cfg['pixel_mode'] ?? 'capi';
+        if ( $mode === 'pixel' ) return true;
+        return empty( $cfg[ $token_key ] );
+    }
+
     private static function get_pixel_ping( $campaign ) {
         $meta_cfg   = Konektor_Meta::get_config( $campaign );
         $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
@@ -196,11 +247,10 @@ class Konektor_Campaign {
              . ".knk-wa-btn:hover{opacity:.88}"
              . "</style>\n";
 
-        $meta_cfg   = Konektor_Meta::get_config( $campaign );
-        $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
-        // Browser pixel di-skip kalau CAPI token sudah diisi — server-side sudah cukup
-        $meta_html   = empty( $meta_cfg['token'] )   ? Konektor_Meta::get_pixel_script( $campaign, 'page_load' ) : '';
-        $tiktok_html = empty( $tiktok_cfg['access_token'] ) ? Konektor_Tiktok::get_script( $campaign, 'page_load' ) : '';
+        // Browser pixel selalu disertakan di embed untuk PageView tracking.
+        // Event setelah klik dicontrol oleh flag capi_meta/capi_tiktok dari response.
+        $meta_html   = Konektor_Meta::get_pixel_script( $campaign, 'page_load' );
+        $tiktok_html = Konektor_Tiktok::get_script( $campaign, 'page_load' );
         $google_html = Konektor_Google::get_script( $campaign, 'page_load' );
         $snack_html  = Konektor_Snack::get_script( $campaign );
         $pixel_ping  = self::get_pixel_ping( $campaign );
@@ -329,11 +379,10 @@ class Konektor_Campaign {
             $header .= '<p style="text-align:center;font-size:18px;font-weight:800;margin-bottom:16px">' . esc_html( $campaign->product_name ) . '</p>';
         }
 
-        $meta_cfg   = Konektor_Meta::get_config( $campaign );
-        $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
-        // Browser pixel di-skip kalau CAPI token sudah diisi — server-side sudah cukup
-        $meta_html   = empty( $meta_cfg['token'] )   ? Konektor_Meta::get_pixel_script( $campaign, 'page_load' ) : '';
-        $tiktok_html = empty( $tiktok_cfg['access_token'] ) ? Konektor_Tiktok::get_script( $campaign, 'page_load' ) : '';
+        // Browser pixel selalu disertakan di embed untuk PageView tracking.
+        // Event setelah submit dicontrol oleh flag capi_meta/capi_tiktok dari response JSON.
+        $meta_html   = Konektor_Meta::get_pixel_script( $campaign, 'page_load' );
+        $tiktok_html = Konektor_Tiktok::get_script( $campaign, 'page_load' );
         $google_html = Konektor_Google::get_script( $campaign, 'page_load' );
         $snack_html  = Konektor_Snack::get_script( $campaign );
         $pixel_ping  = self::get_pixel_ping( $campaign );
@@ -361,21 +410,19 @@ class Konektor_Campaign {
     }
 
     public static function get_form_config( $campaign ) {
-        $cfg = isset( $campaign->form_config ) && $campaign->form_config
-            ? json_decode( $campaign->form_config, true )
-            : [];
-        // Merge with defaults so all keys always exist
+        $cfg      = self::decode_json_field( $campaign->form_config ?? null );
         $defaults = self::default_form_config();
-        if ( empty( $cfg['fields'] ) ) $cfg['fields'] = $defaults['fields'];
-        if ( empty( $cfg['template'] ) ) $cfg['template'] = $defaults['template'];
+        if ( empty( $cfg['fields'] ) )       $cfg['fields']       = $defaults['fields'];
+        if ( empty( $cfg['template'] ) )     $cfg['template']     = $defaults['template'];
         if ( empty( $cfg['submit_label'] ) ) $cfg['submit_label'] = $defaults['submit_label'];
+        if ( ! isset( $cfg['custom_style'] ) ) $cfg['custom_style'] = [];
+        if ( ! isset( $cfg['extra_fields'] ) ) $cfg['extra_fields'] = [];
+        if ( ! isset( $cfg['size'] ) )         $cfg['size']         = $defaults['size'];
         return $cfg;
     }
 
     public static function get_thanks_config( $campaign ) {
-        $cfg = isset( $campaign->thanks_page_config ) && $campaign->thanks_page_config
-            ? json_decode( $campaign->thanks_page_config, true )
-            : [];
+        $cfg      = self::decode_json_field( $campaign->thanks_page_config ?? null );
         $defaults = self::default_thanks_config();
         foreach ( $defaults as $k => $v ) {
             if ( ! isset( $cfg[ $k ] ) ) $cfg[ $k ] = $v;
@@ -387,25 +434,38 @@ class Konektor_Campaign {
         return [
             'template'     => 'modern',
             'submit_label' => 'Kirim Sekarang',
+            'size'         => 'default',
             'fields'       => [
-                [ 'name' => 'name',    'label' => 'Nama',        'type' => 'text',     'required' => true,  'enabled' => true ],
-                [ 'name' => 'phone',   'label' => 'No HP',       'type' => 'tel',      'required' => true,  'enabled' => true ],
-                [ 'name' => 'email',   'label' => 'Email',       'type' => 'email',    'required' => false, 'enabled' => false ],
-                [ 'name' => 'address', 'label' => 'Alamat',      'type' => 'textarea', 'required' => false, 'enabled' => false ],
-                [ 'name' => 'quantity','label' => 'Jumlah',      'type' => 'number',   'required' => false, 'enabled' => false ],
-                [ 'name' => 'custom_message', 'label' => 'Pesan', 'type' => 'textarea','required' => false, 'enabled' => false ],
+                [ 'name' => 'name',           'label' => 'Nama',     'type' => 'text',     'required' => true,  'enabled' => true,  'placeholder' => 'Nama lengkap Anda' ],
+                [ 'name' => 'phone',          'label' => 'No HP/WA', 'type' => 'tel',      'required' => true,  'enabled' => true,  'placeholder' => '08xxx' ],
+                [ 'name' => 'email',          'label' => 'Email',    'type' => 'email',    'required' => false, 'enabled' => false, 'placeholder' => 'email@domain.com' ],
+                [ 'name' => 'address',        'label' => 'Alamat',   'type' => 'textarea', 'required' => false, 'enabled' => false, 'placeholder' => 'Alamat lengkap' ],
+                [ 'name' => 'quantity',       'label' => 'Jumlah',   'type' => 'number',   'required' => false, 'enabled' => false, 'placeholder' => '1' ],
+                [ 'name' => 'custom_message', 'label' => 'Pesan',    'type' => 'textarea', 'required' => false, 'enabled' => false, 'placeholder' => 'Pesan Anda...' ],
             ],
+            'custom_style' => [],
+            'extra_fields' => [],
         ];
     }
 
     private static function default_thanks_config() {
         return [
+            'template'         => 'modern',
             'description'      => 'Terima kasih! Pesanan Anda sedang kami proses.',
             'redirect_type'    => 'cs',
             'redirect_url'     => '',
             'redirect_cs_type' => 'whatsapp',
             'custom_message'   => 'Halo [oname], saya [cname] ingin memesan [product] sebanyak [quantity].',
             'delay_redirect'   => 3,
+            'show_countdown'   => true,
+            'theme'            => [
+                'bg_color'     => '#f0fdf4',
+                'card_color'   => '#ffffff',
+                'accent_color' => '#16a34a',
+                'text_color'   => '#0f172a',
+                'icon'         => '',
+                'heading'      => 'Pesanan Berhasil!',
+            ],
         ];
     }
 }

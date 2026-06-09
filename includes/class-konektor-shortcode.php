@@ -81,12 +81,19 @@ class Konektor_Shortcode {
     public static function collect_pixel_scripts( $campaign, $event_type ) {
         $meta_cfg   = Konektor_Meta::get_config( $campaign );
         $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
+        $snack_cfg  = Konektor_Snack::get_config( $campaign );
         $out = '';
-        $out .= empty( $meta_cfg['token'] )   ? Konektor_Meta::get_pixel_script( $campaign, $event_type ) : '';
+        $out .= self::use_browser_pixel( $meta_cfg,   'token' )        ? Konektor_Meta::get_pixel_script( $campaign, $event_type ) : '';
         $out .= Konektor_Google::get_script( $campaign, $event_type );
-        $out .= empty( $tiktok_cfg['access_token'] ) ? Konektor_Tiktok::get_script( $campaign, $event_type ) : '';
-        $out .= Konektor_Snack::get_script( $campaign );
+        $out .= self::use_browser_pixel( $tiktok_cfg, 'access_token' ) ? Konektor_Tiktok::get_script( $campaign, $event_type ) : '';
+        $out .= self::use_browser_pixel( $snack_cfg,  'access_token' ) ? Konektor_Snack::get_script( $campaign ) : '';
         return $out;
+    }
+
+    private static function use_browser_pixel( array $cfg, $token_key ) {
+        $mode = $cfg['pixel_mode'] ?? 'capi';
+        if ( $mode === 'pixel' ) return true;
+        return empty( $cfg[ $token_key ] );
     }
 
     public static function maybe_render_cs_panel() {

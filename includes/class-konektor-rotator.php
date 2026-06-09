@@ -101,8 +101,10 @@ class Konektor_Rotator {
     }
 
     public static function get_redirect_url( $operator, $campaign, $lead_data ) {
-        $message = Konektor_Helper::parse_shortcodes(
-            $campaign->thanks_page_config ? json_decode( $campaign->thanks_page_config, true )['custom_message'] ?? '' : '',
+        $thanks_cfg = Konektor_Campaign::get_thanks_config( $campaign );
+        $custom_msg = $thanks_cfg['custom_message'] ?? '';
+        $message    = Konektor_Helper::parse_shortcodes(
+            $custom_msg,
             array_merge( $lead_data, [ 'operator_name' => $operator->name ] )
         );
 
@@ -110,7 +112,8 @@ class Konektor_Rotator {
             case 'whatsapp':
                 return Konektor_Helper::wa_url( $operator->value, $message );
             case 'email':
-                $subject = urlencode( 'Halo, saya tertarik dengan ' . ( $lead_data['product_name'] ?? 'produk Anda' ) );
+                $product_name = $lead_data['product_name'] ?? 'produk Anda';
+                $subject      = rawurlencode( 'Halo, saya tertarik dengan ' . $product_name );
                 return 'mailto:' . sanitize_email( $operator->value ) . '?subject=' . $subject . '&body=' . rawurlencode( $message );
             case 'telegram':
                 return 'https://t.me/' . ltrim( $operator->value, '@' );

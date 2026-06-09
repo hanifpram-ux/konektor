@@ -6,7 +6,7 @@ class Konektor_Tiktok {
     const API_ENDPOINT = 'https://business-api.tiktok.com/open_api/v1.3/event/track/';
 
     public static function get_config( $campaign ) {
-        $pixel = $campaign->pixel_config ? json_decode( $campaign->pixel_config, true ) : [];
+        $pixel = Konektor_Campaign::decode_json_field( $campaign->pixel_config ?? null );
         $cfg = $pixel['tiktok'] ?? [];
         // Backward compatibility: if 'enabled' key doesn't exist, treat as enabled (old campaigns)
         if ( array_key_exists( 'enabled', $cfg ) && empty( $cfg['enabled'] ) ) return [];
@@ -44,9 +44,10 @@ class Konektor_Tiktok {
         $event_id = bin2hex( random_bytes( 16 ) );
 
         // User data — hash PII with SHA-256
+        // Use stored IP/UA from lead when available (e.g. status-change CAPI fires after submission)
         $user_data = [
-            'ip'         => Konektor_Helper::get_client_ip(),
-            'user_agent' => sanitize_text_field( $_SERVER['HTTP_USER_AGENT'] ?? '' ),
+            'ip'         => ! empty( $lead_data['ip'] ) ? $lead_data['ip'] : Konektor_Helper::get_client_ip(),
+            'user_agent' => ! empty( $lead_data['user_agent'] ) ? $lead_data['user_agent'] : sanitize_text_field( $_SERVER['HTTP_USER_AGENT'] ?? '' ),
         ];
 
         if ( ! empty( $_COOKIE['_ttp'] ) ) {
@@ -87,6 +88,7 @@ class Konektor_Tiktok {
             }
             if ( ! empty( $lead_data['product_name'] ) ) {
                 $props['content_name'] = sanitize_text_field( $lead_data['product_name'] );
+                $props['content_type'] = 'product';
             }
             if ( $props ) $event['properties'] = $props;
         }

@@ -170,6 +170,7 @@ class Konektor_Telegram {
             "SELECT * FROM {$wpdb->prefix}konektor_operators WHERE status = 'on'"
         );
 
+        $sent = 0;
         foreach ( $operators as $op ) {
             if ( empty( $op->telegram_chat_id ) ) continue;
 
@@ -212,7 +213,10 @@ class Konektor_Telegram {
             }
 
             self::send_message( $op->telegram_chat_id, $text, [ 'inline_keyboard' => $buttons ] );
+            $sent++;
         }
+
+        return $sent;
     }
 
     private static function get_cs_panel_url( $operator ) {
@@ -261,6 +265,7 @@ class Konektor_Telegram {
                     Konektor_Lead::mark_followed_up( $lead_id );
                     if ( $lead->status === 'new' ) {
                         Konektor_Lead::update_status( $lead_id, 'contacted', 'Follow-up via Telegram', $operator->id );
+                        Konektor_Helper::fire_lead_status_capi( $lead_id, 'contacted' );
                     }
                     self::answer_callback_query( $callback_id, '✅ Status diperbarui — Telah Di-Follow Up!' );
                     if ( $chat_id && $message_id ) {
@@ -288,6 +293,7 @@ class Konektor_Telegram {
                         } else {
                             $ok = Konektor_Lead::update_status( $lead_id, $status, 'Update status via Telegram', $operator->id );
                             if ( $ok ) {
+                                Konektor_Helper::fire_lead_status_capi( $lead_id, $status );
                                 self::answer_callback_query( $callback_id, '✅ Status berhasil diubah menjadi ' . ucfirst( $status ) . '.' );
                             } else {
                                 self::answer_callback_query( $callback_id, '❌ Gagal memperbarui status lead.' );
@@ -297,6 +303,8 @@ class Konektor_Telegram {
                         self::answer_callback_query( $callback_id, '❌ Lead tidak ditemukan atau bukan milik Anda.' );
                     }
                 }
+            } else {
+                self::answer_callback_query( $callback_id, '' );
             }
             return;
         }
@@ -351,6 +359,7 @@ class Konektor_Telegram {
                             $lead = Konektor_Lead::get( $lead_id );
                             if ( $lead && (int) $lead->operator_id === (int) $operator->id && $lead->status !== $new_status ) {
                                 Konektor_Lead::update_status( $lead_id, $new_status, 'Update via Telegram reaction', $operator->id );
+                                Konektor_Helper::fire_lead_status_capi( $lead_id, $new_status );
                             }
                         }
                     }

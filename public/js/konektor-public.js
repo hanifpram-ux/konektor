@@ -27,11 +27,27 @@
         });
     });
 
-    // Browser-side pixel events on form submit (optional enhancement)
-    $(document).on('submit', '.konektor-form', function() {
-        if (typeof fbq !== 'undefined') fbq('track', 'Lead', {}, {});
-        if (typeof ttq !== 'undefined') ttq.track('SubmitForm', {}, {});
-        if (typeof gtag !== 'undefined') gtag('event', 'generate_lead');
+    // AJAX form submission with pixel_mode-aware browser pixel calls
+    $(document).on('submit', '.konektor-form', function(e) {
+        e.preventDefault();
+        var $form = $(this);
+        var data  = $form.serialize();
+        data += '&action=konektor_submit_form&nonce=' + (KonektorAjax.nonce || '');
+
+        $.post(KonektorAjax.url, data, function(res) {
+            if (!res || !res.success) return;
+            var d = res.data || {};
+            // Only fire browser pixel if server did NOT already fire CAPI for that platform
+            if (!d.double) {
+                if (!d.capi_meta   && typeof fbq  !== 'undefined') try { fbq('track', 'Lead'); }        catch(x) {}
+                if (!d.capi_tiktok && typeof ttq  !== 'undefined') try { ttq.track('SubmitForm'); }     catch(x) {}
+                if (                  typeof gtag !== 'undefined') try { gtag('event', 'generate_lead'); } catch(x) {}
+            }
+            if (d.redirect_url) {
+                var delay = (typeof d.delay === 'number') ? d.delay * 1000 : 3000;
+                setTimeout(function() { window.location.href = d.redirect_url; }, delay);
+            }
+        });
     });
 
     function escHtml(str) {

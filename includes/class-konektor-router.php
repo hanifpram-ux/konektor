@@ -193,21 +193,18 @@ class Konektor_Router {
             self::mark_done( $campaign->id, $vid );
             Konektor_Analytics::log_event( $campaign->id, 'wa_click', $lead_id );
 
-            // Meta CAPI
             $meta_cfg = Konektor_Meta::get_config( $campaign );
-            if ( ! empty( $meta_cfg['token'] ) ) {
+            if ( ! empty( $meta_cfg['token'] ) && ! self::use_browser_pixel( $meta_cfg, 'token' ) ) {
                 Konektor_Meta::send_capi_event( $meta_cfg['form_submit_event'] ?? '', $lead_data, $meta_cfg );
             }
 
-            // TikTok Events API
             $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
-            if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
+            if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) && ! self::use_browser_pixel( $tiktok_cfg, 'access_token' ) ) {
                 Konektor_Tiktok::send_event( 'form_submit', $lead_data, $tiktok_cfg );
             }
 
-            // Snack/Kwai Event API
             $snack_cfg = Konektor_Snack::get_config( $campaign );
-            if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
+            if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) && ! self::use_browser_pixel( $snack_cfg, 'access_token' ) ) {
                 Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'form_submit' ), $lead_data, $snack_cfg );
             }
         }
@@ -331,27 +328,19 @@ class Konektor_Router {
             'click_id'   => sanitize_text_field( $_GET['click_id'] ?? $_GET['clickid'] ?? '' ),
         ];
 
-        // Meta CAPI — page_load (PageView)
         $meta_cfg = Konektor_Meta::get_config( $campaign );
-        if ( ! empty( $meta_cfg['token'] ) ) {
-            $event_name = $meta_cfg['page_load_event'] ?? '';
-            Konektor_Meta::send_capi_event( $event_name, $lead_data, $meta_cfg );
+        if ( ! empty( $meta_cfg['token'] ) && ! self::use_browser_pixel( $meta_cfg, 'token' ) ) {
+            Konektor_Meta::send_capi_event( $meta_cfg['page_load_event'] ?? '', $lead_data, $meta_cfg );
         }
 
-        // TikTok Events API — page_load
         $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
-        if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
+        if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) && ! self::use_browser_pixel( $tiktok_cfg, 'access_token' ) ) {
             Konektor_Tiktok::send_event( 'page_load', $lead_data, $tiktok_cfg );
         }
 
-        // Snack/Kwai Event API — page_load
         $snack_cfg = Konektor_Snack::get_config( $campaign );
-        if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
-            Konektor_Snack::send_event(
-                Konektor_Snack::get_event_name( $snack_cfg, 'page_load' ),
-                $lead_data,
-                $snack_cfg
-            );
+        if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) && ! self::use_browser_pixel( $snack_cfg, 'access_token' ) ) {
+            Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'page_load' ), $lead_data, $snack_cfg );
         }
 
         echo wp_json_encode( [ 'ok' => true ] );
@@ -380,33 +369,37 @@ class Konektor_Router {
         }
         if ( $redirect_type === 'none' ) $redirect_url = '';
 
-        // Tembak thanks_page API — hanya untuk link/WA (form sudah kirim di handle_submit)
-        if ( $fire_pixels ) {
-            $lead_data_tp = [ 'source_url' => home_url(), 'referrer' => esc_url_raw( $_SERVER['HTTP_REFERER'] ?? '' ) ];
+        // Tembak thanks_page CAPI — untuk semua sumber (form dan link/WA)
+        $tp_data_tp = [
+            'source_url' => home_url(),
+            'referrer'   => esc_url_raw( $_SERVER['HTTP_REFERER'] ?? '' ),
+            'ip'         => Konektor_Helper::get_client_ip(),
+            'user_agent' => sanitize_text_field( $_SERVER['HTTP_USER_AGENT'] ?? '' ),
+        ];
 
-            $meta_cfg = Konektor_Meta::get_config( $campaign );
-            if ( ! empty( $meta_cfg['token'] ) ) {
-                Konektor_Meta::send_capi_event( $meta_cfg['thanks_page_event'] ?? '', $lead_data_tp, $meta_cfg );
-            }
-
-            $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
-            if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
-                Konektor_Tiktok::send_event( 'thanks_page', $lead_data_tp, $tiktok_cfg );
-            }
-
-            $snack_cfg = Konektor_Snack::get_config( $campaign );
-            if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
-                Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'thanks_page' ), $lead_data_tp, $snack_cfg );
-            }
+        $meta_cfg_tp = Konektor_Meta::get_config( $campaign );
+        if ( ! empty( $meta_cfg_tp['token'] ) && ! self::use_browser_pixel( $meta_cfg_tp, 'token' ) ) {
+            Konektor_Meta::send_capi_event( $meta_cfg_tp['thanks_page_event'] ?? '', $tp_data_tp, $meta_cfg_tp );
         }
 
-        // Browser-side pixel scripts untuk thanks page — Meta/TikTok skip jika CAPI token ada
+        $tiktok_cfg_tp = Konektor_Tiktok::get_config( $campaign );
+        if ( ! empty( $tiktok_cfg_tp['pixel_id'] ) && ! empty( $tiktok_cfg_tp['access_token'] ) && ! self::use_browser_pixel( $tiktok_cfg_tp, 'access_token' ) ) {
+            Konektor_Tiktok::send_event( 'thanks_page', $tp_data_tp, $tiktok_cfg_tp );
+        }
+
+        $snack_cfg_tp = Konektor_Snack::get_config( $campaign );
+        if ( ! empty( $snack_cfg_tp['pixel_id'] ) && ! empty( $snack_cfg_tp['access_token'] ) && ! self::use_browser_pixel( $snack_cfg_tp, 'access_token' ) ) {
+            Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg_tp, 'thanks_page' ), $tp_data_tp, $snack_cfg_tp );
+        }
+
+        // Browser-side pixel scripts — hanya jika pixel_mode=pixel atau tidak ada token
         $meta_cfg   = Konektor_Meta::get_config( $campaign );
         $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
-        $pixel_head = ( empty( $meta_cfg['token'] )   ? Konektor_Meta::get_pixel_script( $campaign, 'thanks_page' ) : '' )
+        $snack_cfg  = Konektor_Snack::get_config( $campaign );
+        $pixel_head = ( self::use_browser_pixel( $meta_cfg,   'token' )        ? Konektor_Meta::get_pixel_script( $campaign, 'thanks_page' ) : '' )
                     . Konektor_Google::get_script( $campaign, 'thanks_page' )
-                    . ( empty( $tiktok_cfg['access_token'] ) ? Konektor_Tiktok::get_script( $campaign, 'thanks_page' ) : '' )
-                    . Konektor_Snack::get_script( $campaign );
+                    . ( self::use_browser_pixel( $tiktok_cfg, 'access_token' ) ? Konektor_Tiktok::get_script( $campaign, 'thanks_page' ) : '' )
+                    . ( self::use_browser_pixel( $snack_cfg,  'access_token' ) ? Konektor_Snack::get_script( $campaign ) : '' );
 
         [ $btn_icon, $btn_label ] = self::resolve_btn( $redirect_url, $thanks_cfg['btn_label'] ?? '' );
 
@@ -439,13 +432,13 @@ class Konektor_Router {
         }
         if ( $redirect_type === 'none' ) $redirect_url = '';
 
-        // Browser-side pixel scripts untuk double lead thanks page — Meta/TikTok skip jika CAPI token ada
         $meta_cfg   = Konektor_Meta::get_config( $campaign );
         $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
-        $pixel_head = ( empty( $meta_cfg['token'] )   ? Konektor_Meta::get_pixel_script( $campaign, 'thanks_page' ) : '' )
+        $snack_cfg  = Konektor_Snack::get_config( $campaign );
+        $pixel_head = ( self::use_browser_pixel( $meta_cfg,   'token' )        ? Konektor_Meta::get_pixel_script( $campaign, 'thanks_page' ) : '' )
                     . Konektor_Google::get_script( $campaign, 'thanks_page' )
-                    . ( empty( $tiktok_cfg['access_token'] ) ? Konektor_Tiktok::get_script( $campaign, 'thanks_page' ) : '' )
-                    . Konektor_Snack::get_script( $campaign );
+                    . ( self::use_browser_pixel( $tiktok_cfg, 'access_token' ) ? Konektor_Tiktok::get_script( $campaign, 'thanks_page' ) : '' )
+                    . ( self::use_browser_pixel( $snack_cfg,  'access_token' ) ? Konektor_Snack::get_script( $campaign ) : '' );
 
         [ $btn_icon, ] = self::resolve_btn( $redirect_url, '' );
         $btn_label = 'Hubungi CS Kami';
@@ -571,8 +564,30 @@ class Konektor_Router {
 
         $phone = Konektor_Helper::sanitize_phone( $input['phone'] ?? '' );
         $email = sanitize_email( $input['email'] ?? '' );
+        $name  = strip_tags( trim( $input['name'] ?? '' ) );
         // _vid dari embed JS diutamakan, fallback ke server cookie
-        $vid   = sanitize_text_field( $input['_vid'] ?? $_COOKIE['konektor_vid'] ?? '' );
+        $vid   = substr( strip_tags( trim( $input['_vid'] ?? ( $_COOKIE['konektor_vid'] ?? '' ) ) ), 0, 128 );
+
+        // Validate: name or phone required (form type only)
+        if ( $campaign->type !== 'wa_link' && $phone === '' && $name === '' ) {
+            echo wp_json_encode( [ 'success' => false, 'message' => 'Nama atau nomor HP harus diisi.' ] );
+            exit;
+        }
+
+        // Validate phone: min 10 digits
+        if ( $phone !== '' ) {
+            $digits = preg_replace( '/\D/', '', $phone );
+            if ( strlen( $digits ) < 10 ) {
+                echo wp_json_encode( [ 'success' => false, 'message' => 'Masukkan nomor HP yang valid (min. 10 digit).' ] );
+                exit;
+            }
+        }
+
+        // Validate email format
+        if ( $email !== '' && ! filter_var( $email, FILTER_VALIDATE_EMAIL ) ) {
+            echo wp_json_encode( [ 'success' => false, 'message' => 'Masukkan alamat email yang valid (contoh: nama@domain.com).' ] );
+            exit;
+        }
 
         // Cek duplicate: fingerprint (phone+email) + cookie + IP
         $source_url_for_double = substr( sanitize_text_field( $input['source_url'] ?? '' ), 0, 2000 );
@@ -581,53 +596,72 @@ class Konektor_Router {
 
         $operator = Konektor_Rotator::pick( $campaign->id );
 
+        // Parse tracking params (fbclid, ttclid, UTM) from source_url — sets _fbc cookie for Meta CAPI
+        $source_url_str  = substr( sanitize_text_field( $input['source_url'] ?? ( $_SERVER['HTTP_REFERER'] ?? '' ) ), 0, 2000 );
+        $tracking_params = Konektor_Helper::parse_tracking_params( $source_url_str ?: null );
+
+        // Referrer: real traffic source (ad platform). JS sends document.referrer as 'referrer'.
+        // HTTP_REFERER at submit time is the landing page URL, so only fall back to it if JS didn't supply one.
+        $referrer = substr( strip_tags( $input['referrer'] ?? '' ), 0, 2000 );
+        if ( $referrer === '' ) {
+            $referrer = substr( $_SERVER['HTTP_REFERER'] ?? '', 0, 2000 );
+        }
+
+        $std_keys = [ 'name', 'email', 'phone', 'address', 'quantity', 'custom_message', 'source_url', 'referrer', '_vid', 'click_id' ];
+        $extra    = array_diff_key( $input, array_flip( $std_keys ) );
+        if ( ! empty( $tracking_params ) ) {
+            $extra = array_merge( $tracking_params, $extra ); // tracking first, form data wins on conflict
+        }
+
         $lead_data = [
             'campaign_id'    => $campaign->id,
             'operator_id'    => $operator ? $operator->id : null,
-            'name'           => sanitize_text_field( $input['name']    ?? '' ),
+            'name'           => $name,
             'email'          => $email,
             'phone'          => $phone,
             'address'        => sanitize_textarea_field( $input['address']  ?? '' ),
             'quantity'       => sanitize_text_field( $input['quantity'] ?? '' ),
             'custom_message' => sanitize_textarea_field( $input['custom_message'] ?? '' ),
             'product_name'   => $campaign->product_name,
-            'source_url'     => substr( sanitize_text_field( $input['source_url'] ?? ( $_SERVER['HTTP_REFERER'] ?? '' ) ), 0, 2000 ),
+            'source_url'     => $source_url_str,
+            'referrer'       => $referrer,
+            'click_id'       => sanitize_text_field( $input['click_id'] ?? ( $_GET['click_id'] ?? ( $tracking_params['fbclid'] ?? '' ) ) ),
             '_vid'           => $vid,
         ];
 
-        $std_keys = [ 'name','email','phone','address','quantity','custom_message','source_url','_vid' ];
-        $extra    = array_diff_key( $input, array_flip( $std_keys ) );
-        if ( $extra ) $lead_data['extra_data'] = $extra;
+        if ( ! empty( $extra ) ) $lead_data['extra_data'] = $extra;
 
         $lead_id = Konektor_Lead::create( $lead_data );
         if ( $is_double && $lead_id ) {
             Konektor_Lead::mark_double( $lead_id );
         }
 
+        $capi_meta_fired   = false;
+        $capi_tiktok_fired = false;
         if ( ! $is_double ) {
             self::mark_done( $campaign->id, $vid );
             Konektor_Analytics::log_event( $campaign->id, 'form_submit', $lead_id );
 
-            // Meta CAPI — form_submit + thanks_page
+            $event_data = array_merge( $lead_data, [
+                'ip'         => $ip,
+                'user_agent' => sanitize_text_field( $_SERVER['HTTP_USER_AGENT'] ?? '' ),
+            ] );
+
             $meta_cfg = Konektor_Meta::get_config( $campaign );
-
-            if ( ! empty( $meta_cfg['token'] ) ) {
-                Konektor_Meta::send_capi_event( $meta_cfg['form_submit_event'] ?? '', $lead_data, $meta_cfg );
-                Konektor_Meta::send_capi_event( $meta_cfg['thanks_page_event'] ?? '', $lead_data, $meta_cfg );
+            if ( ! empty( $meta_cfg['token'] ) && ! self::use_browser_pixel( $meta_cfg, 'token' ) ) {
+                Konektor_Meta::send_capi_event( $meta_cfg['form_submit_event'] ?? '', $event_data, $meta_cfg );
+                $capi_meta_fired = true;
             }
 
-            // TikTok Events API — form_submit + thanks_page
             $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
-            if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
-                Konektor_Tiktok::send_event( 'form_submit', $lead_data, $tiktok_cfg );
-                Konektor_Tiktok::send_event( 'thanks_page', $lead_data, $tiktok_cfg );
+            if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) && ! self::use_browser_pixel( $tiktok_cfg, 'access_token' ) ) {
+                Konektor_Tiktok::send_event( 'form_submit', $event_data, $tiktok_cfg );
+                $capi_tiktok_fired = true;
             }
 
-            // Snack/Kwai Event API — form_submit + thanks_page
             $snack_cfg = Konektor_Snack::get_config( $campaign );
-            if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
-                Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'form_submit' ), $lead_data, $snack_cfg );
-                Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'thanks_page' ), $lead_data, $snack_cfg );
+            if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) && ! self::use_browser_pixel( $snack_cfg, 'access_token' ) ) {
+                Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'form_submit' ), $event_data, $snack_cfg );
             }
         }
 
@@ -655,7 +689,7 @@ class Konektor_Router {
             : self::make_thanks_url( $campaign, $redirect_url );
 
         if ( $is_embed ) {
-            echo wp_json_encode( [ 'success' => true, 'double' => $is_double, 'thanks_page_url' => $tp_url ] );
+            echo wp_json_encode( [ 'success' => true, 'double' => $is_double, 'thanks_page_url' => $tp_url, 'capi_meta' => $capi_meta_fired, 'capi_tiktok' => $capi_tiktok_fired ] );
         } else {
             wp_redirect( $tp_url, 302 );
         }
@@ -684,18 +718,17 @@ class Konektor_Router {
         ];
 
         $meta_cfg = Konektor_Meta::get_config( $campaign );
-        if ( ! empty( $meta_cfg['token'] ) ) {
-            $event_name = $meta_cfg['page_load_event'] ?? '';
-            Konektor_Meta::send_capi_event( $event_name, $page_lead_data, $meta_cfg );
+        if ( ! empty( $meta_cfg['token'] ) && ! self::use_browser_pixel( $meta_cfg, 'token' ) ) {
+            Konektor_Meta::send_capi_event( $meta_cfg['page_load_event'] ?? '', $page_lead_data, $meta_cfg );
         }
 
         $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
-        if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
+        if ( ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) && ! self::use_browser_pixel( $tiktok_cfg, 'access_token' ) ) {
             Konektor_Tiktok::send_event( 'page_load', $page_lead_data, $tiktok_cfg );
         }
 
         $snack_cfg = Konektor_Snack::get_config( $campaign );
-        if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
+        if ( ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) && ! self::use_browser_pixel( $snack_cfg, 'access_token' ) ) {
             Konektor_Snack::send_event( Konektor_Snack::get_event_name( $snack_cfg, 'page_load' ), $page_lead_data, $snack_cfg );
         }
 
@@ -703,12 +736,10 @@ class Konektor_Router {
         $config     = Konektor_Campaign::get_form_config( $campaign );
         $thanks_cfg = Konektor_Campaign::get_thanks_config( $campaign );
 
-        $meta_cfg   = Konektor_Meta::get_config( $campaign );
-        $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
-        $pixel_head = ( empty( $meta_cfg['token'] )   ? Konektor_Meta::get_pixel_script( $campaign, 'page_load' ) : '' )
+        $pixel_head = ( self::use_browser_pixel( $meta_cfg,   'token' )        ? Konektor_Meta::get_pixel_script( $campaign, 'page_load' ) : '' )
                     . Konektor_Google::get_script( $campaign, 'page_load' )
-                    . ( empty( $tiktok_cfg['access_token'] ) ? Konektor_Tiktok::get_script( $campaign, 'page_load' ) : '' )
-                    . Konektor_Snack::get_script( $campaign );
+                    . ( self::use_browser_pixel( $tiktok_cfg, 'access_token' ) ? Konektor_Tiktok::get_script( $campaign, 'page_load' ) : '' )
+                    . ( self::use_browser_pixel( $snack_cfg,  'access_token' ) ? Konektor_Snack::get_script( $campaign ) : '' );
 
         include KONEKTOR_PLUGIN_DIR . 'public/form-page.php';
     }
@@ -888,6 +919,12 @@ class Konektor_Router {
     }
 
     // ─── Helpers ────────────────────────────────────────────────────
+
+    private static function use_browser_pixel( array $cfg, $token_key ) {
+        $mode = $cfg['pixel_mode'] ?? 'capi';
+        if ( $mode === 'pixel' ) return true;
+        return empty( $cfg[ $token_key ] );
+    }
 
     private static function parse_input() {
         $ct = $_SERVER['CONTENT_TYPE'] ?? '';

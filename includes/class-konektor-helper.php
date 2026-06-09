@@ -44,15 +44,27 @@ class Konektor_Helper {
     }
 
     public static function parse_shortcodes( $template, $data ) {
+        $name    = $data['name']           ?? '';
+        $email   = $data['email']          ?? '';
+        $phone   = $data['phone']          ?? '';
+        $address = $data['address']        ?? '';
+        $catatan = $data['custom_message'] ?? '';
         $map = [
-            '[cname]'    => $data['name']    ?? '',
-            '[cemail]'   => $data['email']   ?? '',
-            '[cphone]'   => $data['phone']   ?? '',
-            '[caddress]' => $data['address'] ?? '',
-            '[catatan]'  => $data['custom_message'] ?? '',
-            '[product]'  => $data['product_name']   ?? '',
-            '[quantity]' => $data['quantity']        ?? '',
-            '[oname]'    => $data['operator_name']   ?? '',
+            // canonical (standalone-compatible aliases)
+            '[name]'           => $name,
+            '[phone]'          => $phone,
+            '[email]'          => $email,
+            '[address]'        => $address,
+            '[custom_message]' => $catatan,
+            // WP-native shortcodes
+            '[cname]'          => $name,
+            '[cemail]'         => $email,
+            '[cphone]'         => $phone,
+            '[caddress]'       => $address,
+            '[catatan]'        => $catatan,
+            '[product]'        => $data['product_name']  ?? '',
+            '[quantity]'       => $data['quantity']       ?? '',
+            '[oname]'          => $data['operator_name']  ?? '',
         ];
         return str_replace( array_keys( $map ), array_values( $map ), $template );
     }
@@ -177,13 +189,19 @@ class Konektor_Helper {
         $tiktok_cfg = Konektor_Tiktok::get_config( $campaign );
         $snack_cfg  = Konektor_Snack::get_config( $campaign );
 
-        if ( ! empty( $mapping['meta'] ) && ! empty( $meta_cfg['token'] ) ) {
+        $use_browser = function( array $cfg, $token_key ) {
+            $mode = $cfg['pixel_mode'] ?? 'capi';
+            if ( $mode === 'pixel' ) return true;
+            return empty( $cfg[ $token_key ] );
+        };
+
+        if ( ! empty( $mapping['meta'] ) && ! empty( $meta_cfg['token'] ) && ! $use_browser( $meta_cfg, 'token' ) ) {
             Konektor_Meta::send_capi_event( $mapping['meta'], $lead_arr, $meta_cfg );
         }
-        if ( ! empty( $mapping['tiktok'] ) && ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) ) {
+        if ( ! empty( $mapping['tiktok'] ) && ! empty( $tiktok_cfg['pixel_id'] ) && ! empty( $tiktok_cfg['access_token'] ) && ! $use_browser( $tiktok_cfg, 'access_token' ) ) {
             Konektor_Tiktok::send_event( $mapping['tiktok'], $lead_arr, $tiktok_cfg );
         }
-        if ( ! empty( $mapping['snack'] ) && ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) ) {
+        if ( ! empty( $mapping['snack'] ) && ! empty( $snack_cfg['pixel_id'] ) && ! empty( $snack_cfg['access_token'] ) && ! $use_browser( $snack_cfg, 'access_token' ) ) {
             Konektor_Snack::send_event( $mapping['snack'], $lead_arr, $snack_cfg );
         }
     }

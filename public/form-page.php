@@ -290,7 +290,11 @@ $vid = isset( $_COOKIE['konektor_vid'] ) ? sanitize_text_field( $_COOKIE['konekt
     .then(function(r) { return r.json(); })
     .then(function(res) {
       if (res.success) {
-        // Redirect ke thanks page (server sudah build URL-nya)
+        if (!res.double) {
+          if (!res.capi_meta   && typeof fbq  !== 'undefined') try { fbq('track', 'Lead'); }           catch(x) {}
+          if (!res.capi_tiktok && typeof ttq  !== 'undefined') try { ttq.track('SubmitForm'); }        catch(x) {}
+          if (                    typeof gtag !== 'undefined') try { gtag('event','generate_lead'); }  catch(x) {}
+        }
         if (res.thanks_page_url) {
           window.location.href = res.thanks_page_url;
         } else {

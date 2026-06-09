@@ -199,11 +199,11 @@
             .then(function (r) { return r.json(); })
             .then(function (res) {
                 if (res.success) {
-                    // Browser-side pixel (form_submit) sebelum redirect
+                    // Browser-side pixel (form_submit) — skip platform if CAPI already fired server-side
                     if (!res.double) {
-                        if (typeof fbq !== 'undefined') try { fbq('track', 'Lead'); } catch (x) {}
-                        if (typeof ttq !== 'undefined') try { ttq.track('SubmitForm'); } catch (x) {}
-                        if (typeof gtag !== 'undefined') try { gtag('event', 'generate_lead'); } catch (x) {}
+                        if (!res.capi_meta   && typeof fbq  !== 'undefined') try { fbq('track', 'Lead'); } catch (x) {}
+                        if (!res.capi_tiktok && typeof ttq  !== 'undefined') try { ttq.track('SubmitForm'); } catch (x) {}
+                        if (                    typeof gtag !== 'undefined') try { gtag('event', 'generate_lead'); } catch (x) {}
                     }
                     // Selalu redirect ke thanks page (server sudah build URL)
                     if (res.thanks_page_url) {
